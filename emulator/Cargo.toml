@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cdp1802",
+    "crates/elf2",
+    "crates/elf2-wasm",
+    "crates/elf2-cli",
+    "crates/asm1802",
+    "crates/mol1802",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+cdp1802 = { path = "crates/cdp1802" }
+elf2 = { path = "crates/elf2" }
+asm1802 = { path = "crates/asm1802" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+proptest = "1"
+sha2 = "0.11"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

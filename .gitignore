@@ -1,0 +1,21 @@
+# Cassette recordings (large; kept out of the repo for now)
+*.wav
+
+# ROM / firmware images and dumps (not ours to publish)
+cassette-loader/reference/*.hex
+cassette-loader/reference/*.bin
+cassette-loader/output/**/*.bin
+cassette-loader/output/**/*_hex.txt
+
+# Assembler output for sample sources (rebuild with asm1802)
+sample-code/**/*.hex
+sample-code/**/*.bin
+sample-code/**/*.lst
+
+# Python
+__pycache__/
+.venv/
+
+# Editors / OS
+Thumbs.db
+.DS_Store

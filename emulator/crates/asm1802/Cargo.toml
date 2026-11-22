@@ -1,0 +1,17 @@
+[package]
+name = "asm1802"
+description = "Cross-assembler for the RCA CDP1802 (QELFEXE-style source)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "asm1802"
+path = "src/main.rs"
+
+[dev-dependencies]
+cdp1802 = { workspace = true }
+elf2 = { workspace = true }

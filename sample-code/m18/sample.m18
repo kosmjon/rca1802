@@ -1,0 +1,37 @@
+        ORG 0x0000
+;        
+PAGE    EQU 0
+;
+SCRT:   PAGE:R2.1:R3.1:R4.1:R5.1;
+        STACK:R2.0;
+        SCALL:R4.0;
+        SRETN:R5.0;
+        MAIN:R3.0;
+        SEP R3
+;
+        INCLUDE "scrt.m18"
+;
+        INCLUDE "../asm/include/baud_serial.asm"
+;
+MAIN:   CALL BSINIT;            SET UP THE BIT-BANGED SERIAL PORT (ONCE)
+LOOP:   CALL SERIN;             WAIT FOR CHAR FROM ASCII KEYBOARD
+        CALL SEROUT;
+        /LOOP
+
+
+MAIN2:  EF4=0? /MAIN2;          WAIT FOR IN PRESS
+IDLE:   EF4=1? /IDLE;           WAIT FOR IN RELEASED
+        Q=1? /OFF;              Q ON?  TURN OFF                  
+        CALL QON;               SET Q ON
+        /MAIN2;                  BACK TO WAIT FOR IN AGAIN
+OFF:    CALL QOFF;              SET Q OFF
+        /MAIN2;                  BACK TO START
+;
+QON:    1:Q;
+        RETN
+;
+QOFF:   0:Q;
+        RETN
+;
+        ORG 0x0FFF
+STACK:  ;

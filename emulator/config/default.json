@@ -1,0 +1,49 @@
+{
+  "clock_hz": 1789773,
+  "ram_size": 24576,
+  "unmapped_read": 255,
+  "roms": [],
+  "start_at_f000": false,
+  "pixie": {
+    "on_is_inp": true
+  },
+  "serial": {
+    "rx_ef": 3,
+    "tx_inverted": false,
+    "rx_inverted": false,
+    "baud": 300,
+    "data_bits": 8,
+    "parity": "None",
+    "stop_bits": 1,
+    "paste_gap_ms": 40,
+    "paste_cr_gap_ms": 200
+  },
+  "vid1": {
+    "columns": 64,
+    "codes": [
+      {
+        "code": 8,
+        "action": "CursorLeft"
+      },
+      {
+        "code": 10,
+        "action": "LineFeed"
+      },
+      {
+        "code": 12,
+        "action": "ClearScreen"
+      },
+      {
+        "code": 13,
+        "action": "CarriageReturn"
+      },
+      {
+        "code": 127,
+        "action": "Delete"
+      }
+    ]
+  },
+  "parallel_1852": false,
+  "parallel_sr_to_int": false,
+  "cassette": false
+}

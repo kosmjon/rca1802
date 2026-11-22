@@ -1,0 +1,7 @@
+        ORG 0x0000
+;        
+MAIN:   EF4=0? /MAIN;           WAIT FOR IN PRESS
+IDLE:   EF4=1? /IDLE;           WAIT FOR IN RELEASED
+        Q=1? (Q:0 /MAIN);       Q ON? TURN OFF AND WAIT FOR IN                 
+        1:Q;                    SET Q ON
+        /MAIN;                  BACK TO WAIT FOR IN

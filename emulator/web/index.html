@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Netronics Elf II</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Netronics Elf II</h1>
+    <span id="status" class="status">loading…</span>
+    <label class="opt"><input type="checkbox" id="max-speed"> max speed</label>
+    <span id="speed" class="dim"></span>
+  </header>
+
+  <main>
+    <section id="front-panel" class="panel" tabindex="0" aria-label="Front panel">
+      <h2>Front panel</h2>
+      <div class="panel-row">
+        <div id="hex-display" class="hex-display" aria-label="Hex display"></div>
+        <div class="leds">
+          <div class="led-box"><span id="led-q" class="led red"></span>Q</div>
+          <div class="led-box"><span id="led-ef1" class="led small"></span>EF1</div>
+          <div class="led-box"><span id="led-ef2" class="led small"></span>EF2</div>
+          <div class="led-box"><span id="led-ef3" class="led small"></span>EF3</div>
+          <div class="led-box"><span id="led-ef4" class="led small"></span>EF4</div>
+        </div>
+      </div>
+      <div class="panel-row">
+        <div id="keypad" class="keypad"></div>
+        <div class="switches">
+          <button id="sw-run" class="switch" data-sw="0">RUN</button>
+          <button id="sw-load" class="switch" data-sw="1">LOAD</button>
+          <button id="sw-mp" class="switch" data-sw="2">MP</button>
+          <button id="btn-in" class="in-button">IN</button>
+        </div>
+      </div>
+      <div id="cpu-state" class="cpu-state">reset</div>
+      <p id="cpu-warning" class="warning" hidden></p>
+      <p id="rom-list" class="dim">ROMs: none loaded</p>
+      <p class="hint">Click here, then type 0-F · Enter = IN · R / L / M = switches</p>
+    </section>
+
+    <section class="panel display-panel" aria-label="Displays">
+      <div class="tabs" role="tablist">
+        <button id="tab-vid1" class="tab active" role="tab" aria-selected="true" aria-controls="pane-vid1">VID-1 terminal</button>
+        <button id="tab-pixie" class="tab" role="tab" aria-selected="false" aria-controls="pane-pixie">CDP1861 Pixie <span id="pixie-state" class="tab-badge">off</span></button>
+      </div>
+      <div id="pane-vid1" class="pane" role="tabpanel">
+        <canvas id="vid1" class="vid1" tabindex="0"></canvas>
+        <div class="toolbar">
+          <label class="opt"><input type="checkbox" id="upper-case"> upper case only</label>
+          <button id="term-paste">Paste</button>
+          <button id="term-copy">Copy screen</button>
+          <button id="term-clear">Clear screen</button>
+          <span id="term-pending" class="dim"></span>
+          <span class="hint">click the screen to type · Ctrl+key sends control codes</span>
+        </div>
+      </div>
+      <div id="pane-pixie" class="pane" role="tabpanel" hidden>
+        <canvas id="pixie" width="64" height="128" class="pixie"></canvas>
+        <div class="toolbar">
+          <label class="opt"><input type="checkbox" id="scanlines" checked> scanlines</label>
+          <label class="opt"><input type="checkbox" id="pixie-auto" checked> switch to this tab when the display turns on</label>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="files-panel" class="panel files-panel" aria-label="Files and machine">
+      <div class="tabs" role="tablist">
+        <button id="tab-load" class="tab active" role="tab" aria-selected="true" aria-controls="pane-load">Load and save</button>
+        <button id="tab-roms" class="tab" role="tab" aria-selected="false" aria-controls="pane-roms">ROMs and machine</button>
+      </div>
+      <div id="pane-load" class="pane" role="tabpanel">
+        <p class="hint">Choose a file, or drop a .bin / .hex file anywhere on the page.</p>
+        <div class="toolbar">
+          <input type="file" id="file" accept=".bin,.hex,.rom">
+          <label>address <input id="file-addr" value="0000" size="5" spellcheck="false"></label>
+          <label class="opt"><input type="checkbox" id="file-rom"> as ROM</label>
+          <button id="file-load">Load</button>
+          <button id="boot-f000" title="Key in C0 F0 00 (LBR F000) at 0000">Key in LBR F000</button>
+        </div>
+        <div class="toolbar">
+          <span>Save memory</span>
+          <label>from <input id="save-start" value="0000" size="5" spellcheck="false"></label>
+          <label>to <input id="save-end" value="00FF" size="5" spellcheck="false"></label>
+          <select id="save-format"><option value="hex">Intel HEX</option><option value="bin">binary</option></select>
+          <button id="save-range">Save</button>
+        </div>
+      </div>
+      <div id="pane-roms" class="pane" role="tabpanel" hidden>
+        <p class="hint">ROMs are kept in this browser only; the site does not include any.</p>
+        <p id="missing-roms" class="warning" hidden></p>
+        <table id="rom-table" class="rom-table">
+          <thead><tr><th>use</th><th>name</th><th>address</th><th>size</th><th>SHA-256</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p id="rom-empty" class="dim">No ROMs saved. Load one with "as ROM" ticked.</p>
+        <div class="toolbar">
+          <button id="power-cycle" title="Discard the saved state and start a fresh machine with the ticked ROMs">Power cycle</button>
+          <span id="restore-note" class="dim"></span>
+        </div>
+        <details>
+          <summary>Machine configuration (JSON)</summary>
+          <p class="dim">RAM size, clock, serial settings, VID-1 columns and control codes. Applying it power-cycles the machine. Empty = defaults.</p>
+          <textarea id="config-text" rows="8" spellcheck="false"></textarea>
+          <div class="toolbar">
+            <button id="config-apply">Apply and power cycle</button>
+            <button id="config-default">Reset to defaults</button>
+          </div>
+        </details>
+      </div>
+      <p id="file-msg" class="dim"></p>
+    </section>
+
+    <details id="debugger" class="panel wide" tabindex="0">
+      <summary><h2>Debugger <span class="hint">F10 step · F5 continue · click a line for a breakpoint · click a register or byte to edit</span></h2></summary>
+      <div class="toolbar">
+        <button id="dbg-stop">Stop</button>
+        <button id="dbg-continue">Continue</button>
+        <button id="dbg-step">Step</button>
+        <button id="dbg-reset" title="RUN off and on again: CPU reset, memory kept">Reset CPU</button>
+        <span id="dbg-status" class="dbg-status"></span>
+      </div>
+      <div class="dbg-grid">
+        <div>
+          <h3>Registers</h3>
+          <div id="dbg-regs" class="regs"></div>
+          <div id="dbg-flags" class="flags"></div>
+          <h3>Breakpoints</h3>
+          <div class="toolbar">
+            <input id="dbg-bp-addr" size="5" value="0000" spellcheck="false">
+            <button id="dbg-bp-add">Add</button>
+            <span id="dbg-bps" class="dim">none</span>
+          </div>
+          <h3>Serial line <span id="dbg-serial-errs" class="err-count"></span></h3>
+          <div id="dbg-serial" class="serial-log"></div>
+          <button id="dbg-serial-clear">Clear log</button>
+        </div>
+        <div>
+          <h3>Disassembly
+            <label class="opt"><input type="checkbox" id="dbg-follow" checked> follow PC</label>
+            <input id="dbg-dis-addr" size="5" value="F000" spellcheck="false"><button id="dbg-dis-go">Go</button>
+            <button id="dbg-dis-up" class="scroll-btn" title="Scroll up one line">▲</button>
+            <button id="dbg-dis-down" class="scroll-btn" title="Scroll down one line">▼</button>
+          </h3>
+          <div id="dbg-dis" class="dis" tabindex="0" title="Scroll with the mouse wheel, or Page Up/Down"></div>
+        </div>
+        <div>
+          <h3>Memory
+            <input id="dbg-mem-addr" size="5" value="0000" spellcheck="false"><button id="dbg-mem-go">Go</button>
+            <button id="dbg-mem-up" class="scroll-btn" title="Scroll up one row (Shift: one byte)">▲</button>
+            <button id="dbg-mem-down" class="scroll-btn" title="Scroll down one row (Shift: one byte)">▼</button>
+          </h3>
+          <div id="dbg-mem" class="mem" tabindex="0" title="Scroll with the mouse wheel (Shift: one byte), or Page Up/Down"></div>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <footer class="dim">
+    No ROMs or programs are included; load your own files. Emulator core: Rust compiled to WebAssembly.
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

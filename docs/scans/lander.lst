@@ -1,0 +1,395 @@
+ LINE  ADDR  CODE         SOURCE
+    1                     ; OCR transcription of docs/scans/lander.pdf ("Lander" game, QUESTDATA
+    2                     ; COSMAC CLUB, pages 4-5). Flowcharts on these pages are NOT transcribed
+    3                     ; (per instructions); their logic corresponds to the shift/clamp loop in
+    4                     ; the Input/Move Subroutine around 0539-0573, noted there as a comment.
+    5                     ;
+    6                     ; METHODOLOGY: this listing's "Code" column is the authoritative source
+    7                     ; for every operand (register number, immediate byte, branch target);
+    8                     ; the "Mnem." column only names the instruction family, with NO operand
+    9                     ; text (unlike the PD1802 listing transcribed earlier). Every operand
+   10                     ; below was decoded by hand from the printed hex bytes against the
+   11                     ; standard CDP1802 opcode map (register-implied: 0N/1N/2N/4N/5N/8N/9N/
+   12                     ; AN/BN/DN/EN; branches 30-3F; INP 69-6F/OUT 61-67; ALU F0-FF). Loc is
+   13                     ; used to place ORG directives (per instructions), including at the one
+   14                     ; place the listing itself skips addresses (045C-046F, unlisted) and
+   15                     ; wherever a new named subroutine starts on a different page/column than
+   16                     ; the previous one ends, since this listing's sections are NOT printed
+   17                     ; in memory order (Display Subroutine, at 04CE, is printed on page 5
+   18                     ; after Draw Subroutine at 0580, which is itself after Input/Move at
+   19                     ; 0500+, even though 04CE < 0500 < 0580 in memory).
+   20                     ;
+   21                     ; Short-branch targets (2-byte opcode, low byte in Code) were computed as
+   22                     ; (page of the branch instruction itself) | (low byte in Code), per the
+   23                     ; 1802 short-branch rule, and given address-named labels (L<loc>) purely
+   24                     ; for traceability back to the original Loc column -- cross-check any of
+   25                     ; them directly against the scan by looking up that address.
+   26                     ;
+   27                     ; One OCR uncertainty worth re-checking against the original scan: at
+   28                     ; 0552 the Code/Mnem are transcribed literally as "AB"/"PLO" (PLO RB),
+   29                     ; but the mirrored Up/Down-movement block eight lines earlier (0531-
+   30                     ; 0532) does the analogous step as "BB"/PHI" (PHI RB) -- the Left/Right
+   31                     ; block otherwise mirrors the Up/Down block instruction-for-instruction,
+   32                     ; so "BB PHI" is what's structurally expected here too. Transcribed as
+   33                     ; literally read; flagged rather than silently corrected.
+   34                     ;
+   35                     ; Where the Code column shows two single-byte opcodes on one printed
+   36                     ; line (common for runs of register-implied ops, e.g. "B1 B2" for two
+   37                     ; separate PHI's), both are transcribed as separate instructions at
+   38                     ; consecutive addresses, since the Mnem's own operand register differs
+   39                     ; between them.
+   40                     
+   41                     ; ==================================================================
+   42                     ; Main Program
+   43                     ; ==================================================================
+   44  0400                           ORG 0x0400
+   45  0400  F8 04                    LDI 0x04            ; SET UPPER
+   46  0402  B1                       PHI R1              ; REGISTERS
+   47  0403  B2                       PHI R2
+   48  0404  B3                       PHI R3
+   49  0405  F8 05                    LDI 0x05
+   50  0407  B8                       PHI R8
+   51  0408  B9                       PHI R9
+   52  0409  BF                       PHI RF
+   53  040A  F8 06                    LDI 0x06            ; SET DISPLAY
+   54  040C  B4                       PHI R4              ; PAGE
+   55  040D  B5                       PHI R5
+   56  040E  F8 D0                    LDI 0xD0            ; SET INTERRUPT
+   57  0410  A1                       PLO R1              ; COUNTER
+   58  0411  F8 F0                    LDI 0xF0            ; SET INTERRUPT
+   59  0413  A2                       PLO R2              ; STACK
+   60  0414  F8 01                    LDI 0x01            ; SET INPUT/MOVE
+   61  0416  A8                       PLO R8              ; SUBROUTINE
+   62  0417  F8 81                    LDI 0x81            ; SET DRAW
+   63  0419  A9                       PLO R9              ; SUBROUTINE
+   64  041A  F8 1E                    LDI 0x1E            ; SET MAIN
+   65  041C  A3                       PLO R3              ; PROGRAM
+   66  041D  D3                       SEP R3              ; SET P
+   67  041E  E2                       SEX R2              ; SET X
+   68  041F  69                       INP 1               ; DISPLAY ON
+   69  0420  7A           L0420:      REQ                 ; RESET Q
+   70  0421  3F 21        L0421:      BN4 L0421           ; WAIT FOR INPUT PRESSED
+   71  0423  37 23        L0423:      B4  L0423           ; WAIT FOR INP. RELEASED
+   72  0425  E4                       SEX R4              ; SET X
+   73  0426  F8 FF                    LDI 0xFF            ; CLEAR DISPLAY
+   74  0428  A4                       PLO R4              ; PAGE
+   75  0429  F8 00        L0429:      LDI 0x00
+   76  042B  73                       STXD
+   77  042C  84                       GLO R4
+   78  042D  3A 29                    BNZ L0429
+   79  042F  F8 FF                    LDI 0xFF            ; DRAW LINE
+   80  0431  A4                       PLO R4              ; ALONG
+   81  0432  F8 FF        L0432:      LDI 0xFF            ; BOTTOM
+   82  0434  73                       STXD
+   83  0435  84                       GLO R4
+   84  0436  FF F8                    SMI 0xF8
+   85  0438  33 32                    BDF L0432
+   86  043A  F8 00                    LDI 0x00            ; SET DISPLAY/CONTROL
+   87  043C  A4                       PLO R4              ; ADDRESSES
+   88  043D  A5                       PLO R5
+   89  043E  AE                       PLO RE              ; SET UP/LEFT/DOWN
+   90  043F  AD                       PLO RD
+   91  0440  BE                       PHI RE              ; =0
+   92  0441  F8 04                    LDI 0x04            ; SET RIGHT MOVEMENT
+   93  0443  BD                       PHI RD              ; =4
+   94  0444  F8 80                    LDI 0x80            ; SET CONTROL
+   95  0446  AA                       PLO RA              ; BIT
+   96  0447  F8 20                    LDI 0x20            ; SET FUEL
+   97  0449  A6                       PLO R6              ; COUNT
+   98  044A  F8 F0                    LDI 0xF0            ; POINT TO SPACESHIP
+   99  044C  AF                       PLO RF              ; DATA
+  100  044D  D9                       SEP R9              ; GO TO DRAW SUBROUTINE
+  101  044E  3F 4E        L044E:      BN4 L044E           ; WAIT FOR INPUT PRESSED
+  102  0450  37 50        L0450:      B4  L0450           ; WAIT FOR INPUT RELEASE
+  103  0452  85           L0452:      GLO R5              ; PUT CONTROL ADDRESS
+  104  0453  A4                       PLO R4              ; INTO DISPLAY ADDRESS
+  105  0454  E2                       SEX R2              ; SET X
+  106  0455  6C                       INP 4               ; READ KEYBOARD
+  107  0456  FA 0F                    ANI 0x0F            ; MASK LEFT HALF
+  108  0458  BA                       PHI RA              ; OF BYTE
+  109  0459  D8                       SEP R8              ; GO TO INPUT SUBROUTINE
+  110  045A  30 70                    BR  L0470
+  111                     ;
+  112                     ; (listing itself jumps straight from 045A to 0470; 045C-046F are not
+  113                     ; printed in the source and are not reconstructed here)
+  114                     ;
+  115  0470                           ORG 0x0470
+  116  0470  F8 F0        L0470:      LDI 0xF0            ; POINT TO SPACESHIP
+  117  0472  AF                       PLO RF              ; DATA
+  118  0473  D9                       SEP R9              ; GO TO DRAW SUBROUTINE
+  119  0474  8F                       GLO RF              ; GET ADDRESS VALUE
+  120  0475  32 84                    BZ  L0484           ; BRANCH IF ZERO
+  121  0477  04                       LDN R4              ; GET DISPLAY BYTE
+  122  0478  32 96                    BZ  L0496           ; BR. NOT OCCUPIED
+  123  047A  8B                       GLO RB              ; GET LEFT/RIGHT MOVE.
+  124  047B  3A 84                    BNZ L0484           ; BRANCH NOT ZERO
+  125  047D  9B                       GHI RB              ; GET UP/DOWN MOVE.
+  126  047E  FF 02                    SMI 0x02            ; SUBTRACT 2
+  127  0480  32 8F                    BZ  L048F           ; BRANCH IF ZERO
+  128  0482  3B 8F                    BNF L048F           ; BR. IF NEGATIVE
+  129  0484  F8 FA        L0484:      LDI 0xFA            ; POINT TO CRASH
+  130  0486  AF                       PLO RF              ; DATA
+  131  0487  84                       GLO R4              ; GET DISPLAY ADDRESS
+  132  0488  FF 28                    SMI 0x28            ; MOVE UP 6 LINES
+  133  048A  A4                       PLO R4              ; SAVE LOCATION
+  134  048B  A5                       PLO R5
+  135  048C  D9                       SEP R9              ; DRAW CRASH
+  136  048D  30 20                    BR  L0420           ; BRANCH TO RESET
+  137  048F  15           L048F:      INC R5              ; MOVE CONTROL ADDR.
+  138  0490  15                       INC R5
+  139  0491  85                       GLO R5              ; GET CONTROL ADDR.
+  140  0492  A4                       PLO R4              ; PUT INTO DISPLAY ADDR.
+  141  0493  D9                       SEP R9              ; DRAW MAN
+  142  0494  30 20                    BR  L0420           ; BRANCH TO RESET
+  143  0496  F8 30        L0496:      LDI 0x30            ; DELAY
+  144  0498  BC                       PHI RC
+  145  0499  2C           L0499:      DEC RC
+  146  049A  9C                       GHI RC
+  147  049B  3A 99                    BNZ L0499
+  148  049D  30 52                    BR  L0452           ; BR. TO CONTINUE
+  149                     
+  150                     ; ==================================================================
+  151                     ; Input/Move Subroutine
+  152                     ; ==================================================================
+  153  0500                           ORG 0x0500
+  154  0500  D3           L0500:      SEP R3              ; RETURN
+  155  0501  EF                       SEX RF              ; SET X
+  156  0502  F8 FF                    LDI 0xFF            ; POINT TO TEMP.
+  157  0504  AF                       PLO RF              ; MEM. STORAGE
+  158  0505  31 29                    BQ  L0529           ; BRANCH Q ON
+  159  0507  9A                       GHI RA              ; GET KEYBOARD VALUE
+  160  0508  32 22                    BZ  L0522           ; BRANCH IF ZERO
+  161  050A  FB 01                    XRI 0x01            ; CHECK IF = 1
+  162  050C  32 1A                    BZ  L051A           ; IF SO, BRANCH
+  163  050E  9A                       GHI RA              ; GET KEYBOARD VALUE
+  164  050F  FB 02                    XRI 0x02            ; CHECK IF = 2
+  165  0511  32 1D                    BZ  L051D           ; IF SO, BRANCH
+  166  0513  1E                       INC RE              ; INC UP MOVE COUNT
+  167  0514  9E                       GHI RE              ; GET DOWN MOVE COUNT
+  168  0515  FF 01                    SMI 0x01            ; SUBRACT 1
+  169  0517  BE                       PHI RE              ; AND SAVE
+  170  0518  30 21                    BR  L0521           ; BRANCH
+  171  051A  1D           L051A:      INC RD              ; INC LEFT MOVE COUNT
+  172  051B  30 21                    BR  L0521           ; BRANCH
+  173  051D  9D           L051D:      GHI RD              ; GET RT. MOVE COUNT
+  174  051E  FC 01                    ADI 0x01            ; ADD 1
+  175  0520  BD                       PHI RD              ; AND SAVE
+  176  0521  26           L0521:      DEC R6              ; DEC FUEL COUNT
+  177  0522  86           L0522:      GLO R6              ; GET FUEL COUNT
+  178  0523  3A 26                    BNZ L0526           ; BRANCH NOT ZERO
+  179  0525  7B                       SEQ                 ; TURN Q ON
+  180  0526  5F           L0526:      STR RF              ; STORE FUEL COUNT
+  181  0527  64                       OUT 4               ; DISPLAY FUEL COUNT
+  182  0528  2F                       DEC RF              ; DEC TEMP. MEM. LOC.
+  183  0529  9E           L0529:      GHI RE              ; GET DOWN MOVEMENT
+  184  052A  FC 01                    ADI 0x01            ; ADD 1 FOR GRAV.
+  185  052C  BE                       PHI RE              ; AND SAVE
+  186  052D  9E                       GHI RE              ; GET DOWN MOVEMENT
+  187  052E  5F                       STR RF              ; STORE IN TEMP. MEM.
+  188  052F  8E                       GLO RE              ; GET UP MOVEMENT
+  189  0530  F5                       SD                  ; SUBTRACT FROM DOWN
+  190  0531  AC                       PLO RC              ; SAVE IN COUNTER
+  191  0532  BB                       PHI RB              ; AND RESULTANT
+  192  0533  3A 39                    BNZ L0539           ; BRANCH NOT ZERO
+  193  0535  AE                       PLO RE              ; OR SET UP/DOWN
+  194  0536  BE                       PHI RE              ; TO ZERO
+  195  0537  30 4D                    BR  L054D           ; BRANCH
+  196  0539  33 45        L0539:      BDF L0545           ; BRANCH IF POSITIVE
+  197  053B  85           L053B:      GLO R5              ; GET CONTROL ADDRESS
+  198  053C  FF 08                    SMI 0x08            ; MOVE UP ONE LINE
+  199  053E  A5                       PLO R5              ; AND SAVE
+  200  053F  1C                       INC RC              ; INC UP COUNT
+  201  0540  8C                       GLO RC              ; GET UP COUNT
+  202  0541  3A 3B                    BNZ L053B           ; BR. BACK IF NOT ZERO
+  203  0543  30 4D                    BR  L054D           ; BRANCH
+  204  0545  85           L0545:      GLO R5              ; GET CONTROL ADDRESS
+  205  0546  FC 08                    ADI 0x08            ; MOVE DOWN ONE LINE
+  206  0548  A5                       PLO R5              ; AND SAVE
+  207  0549  2C                       DEC RC              ; DEC DOWN COUNT
+  208  054A  8C                       GLO RC              ; GET DOWN COUNT
+  209  054B  3A 45                    BNZ L0545           ; BR. BACK IF NOT ZERO
+  210  054D  9D           L054D:      GHI RD              ; GET RIGHT MOVEMENT
+  211  054E  5F                       STR RF              ; STORE IN TEMP. MEM.
+  212  054F  8D                       GLO RD              ; GET LEFT MOVEMENT
+  213  0550  F5                       SD                  ; SUBTRACT FROM RIGHT
+  214  0551  AC                       PLO RC              ; SAVE IN COUNTER
+  215  0552  AB                       PLO RB              ; AND RESULTANT  [see header note: expected "PHI RB" by symmetry with 0532]
+  216  0553  3A 59                    BNZ L0559           ; BRANCH NOT ZERO
+  217  0555  AD                       PLO RD              ; OR SET LEFT/RIGHT
+  218  0556  BD                       PHI RD              ; TO ZERO
+  219  0557  30 00                    BR  L0500           ; BRANCH TO RETURN
+  220  0559  33 68        L0559:      BDF L0568           ; BRANCH IF POSITIVE
+  221  055B  8A           L055B:      GLO RA              ; GET CONTROL BYTE
+  222  055C  FE                       SHL                 ; SHIFT LEFT
+  223  055D  3B 61                    BNF L0561           ; BRANCH DF=0
+  224  055F  25                       DEC R5              ; DEC CONTROL ADDRESS
+  225  0560  7E                       SHLC                ; SHIFT LEFT W/CARRY
+  226  0561  AA           L0561:      PLO RA              ; SAVE CONTROL BYTE
+  227  0562  1C                       INC RC              ; INC COUNTER
+  228  0563  8C                       GLO RC              ; GET COUNTER
+  229  0564  3A 5B                    BNZ L055B           ; BRANCH NOT ZERO
+  230  0566  30 00                    BR  L0500           ; BRANCH TO RETURN
+  231  0568  8A           L0568:      GLO RA              ; GET CONTROL BYTE
+  232  0569  F6                       SHR                 ; SHIFT RIGHT
+  233  056A  3B 6E                    BNF L056E           ; BRANCH DF=0
+  234  056C  15                       INC R5              ; INC CONTROL ADDRESS
+  235  056D  76                       SHRC                ; SHIFT RT. W/CARRY
+  236  056E  AA           L056E:      PLO RA              ; SAVE CONTROL BYTE
+  237  056F  2C                       DEC RC              ; DEC COUNTER
+  238  0570  8C                       GLO RC              ; GET COUNTER
+  239  0571  3A 68                    BNZ L0568           ; BRANCH COUNT NOT ZERO
+  240  0573  30 00                    BR  L0500           ; BRANCH TO RETURN
+  241                     ;
+  242                     ; The flowchart on page 4 ("Save In RB.0 & RC.0" / "Resultant = 0?" /
+  243                     ; shift-left-or-right / "Inc or Dec RC.0" / "RC.0 = 0?") documents the
+  244                     ; shift/clamp logic spanning L0539-L0573 above (the mirrored Up/Down and
+  245                     ; Left/Right movement-clamping blocks); not transcribed since it's a
+  246                     ; diagram, not code.
+  247                     
+  248                     ; ==================================================================
+  249                     ; Draw Subroutine
+  250                     ; ==================================================================
+  251  0580                           ORG 0x0580
+  252  0580  D3           L0580:      SEP R3              ; RETURN
+  253  0581  F8 05                    LDI 0x05            ; SET LINE
+  254  0583  AC                       PLO RC              ; COUNT
+  255  0584  F8 00        L0584:      LDI 0x00            ; CLEAR OLD
+  256  0586  54                       STR R4              ; SPACESHIP
+  257  0587  14                       INC R4
+  258  0588  54                       STR R4
+  259  0589  84                       GLO R4
+  260  058A  FC 07                    ADI 0x07
+  261  058C  A4                       PLO R4
+  262  058D  2C                       DEC RC
+  263  058E  8C                       GLO RC
+  264  058F  3A 84                    BNZ L0584
+  265  0591  85                       GLO R5              ; GET CONTROL ADDRESS
+  266  0592  A4                       PLO R4              ; PUT INTO DISPLAY ADDR.
+  267  0593  F8 05                    LDI 0x05            ; SET LINE
+  268  0595  AC                       PLO RC              ; COUNT
+  269  0596  04           L0596:      LDN R4              ; GET DISPLAY BYTE
+  270  0597  3A B6                    BNZ L05B6           ; BRANCH IF OCCUPIED
+  271  0599  8A                       GLO RA              ; GET CONTROL BIT
+  272  059A  BC                       PHI RC              ; STORE IN TEMP. COUNTER
+  273  059B  4F                       LDA RF              ; GET DATA BYTE
+  274  059C  54                       STR R4              ; STORE IN DISPLAY
+  275  059D  9C           L059D:      GHI RC              ; GET CONTROL BIT
+  276  059E  FE                       SHL                 ; SHIFT LEFT
+  277  059F  BC                       PHI RC              ; SAVE
+  278  05A0  33 AC                    BDF L05AC           ; BRANCH IF DF=1
+  279  05A2  04                       LDN R4              ; GET DISPLAY BYTE
+  280  05A3  F6                       SHR                 ; SHIFT RIGHT
+  281  05A4  54                       STR R4              ; STORE
+  282  05A5  14                       INC R4              ; INC DISPLAY LOCATION
+  283  05A6  04                       LDN R4              ; GET DISPLAY BYTE
+  284  05A7  76                       SHRC                ; SHIFT RIGHT W/CARRY
+  285  05A8  54                       STR R4              ; STORE
+  286  05A9  24                       DEC R4              ; RESET DISPLAY LOC.
+  287  05AA  30 9D                    BR  L059D           ; BRANCH
+  288  05AC  84           L05AC:      GLO R4              ; GET DISPLAY ADDRESS
+  289  05AD  FC 08                    ADI 0x08            ; MOVE DOWN ONE
+  290  05AF  A4                       PLO R4              ; LINE
+  291  05B0  2C                       DEC RC              ; DEC LINE COUNT
+  292  05B1  8C                       GLO RC              ; GET LINE COUNT
+  293  05B2  3A 96                    BNZ L0596           ; BRANCH NOT ZERO
+  294  05B4  30 80                    BR  L0580           ; BRANCH TO RETURN
+  295  05B6  F8 00        L05B6:      LDI 0x00            ; SET TEMP. MEM. ADDR.
+  296  05B8  AF                       PLO RF              ; TO ZERO
+  297  05B9  30 80                    BR  L0580           ; BRANCH TO RETURN
+  298                     
+  299                     ; ==================================================================
+  300                     ; Display Subroutine (interrupt handler; entered via hardware P=1/X=2
+  301                     ; at R1 = 0x04D0, per the "SET INTERRUPT COUNTER" setup in Main Program;
+  302                     ; 04CE/04CF (LDXA/RET) run once, from elsewhere, to enable interrupts)
+  303                     ; ==================================================================
+  304  04CE                           ORG 0x04CE
+  305  04CE  72           L04CE:      LDXA                ; INTERRUPT
+  306  04CF  70                       RET                 ; RETURN
+  307  04D0  22           L04D0:      DEC R2
+  308  04D1  78                       SAV
+  309  04D2  22                       DEC R2
+  310  04D3  52                       STR R2
+  311  04D4  C4                       NOP                 ; NOPs FOR
+  312  04D5  C4                       NOP
+  313  04D6  C4                       NOP                 ; SYNC.
+  314  04D7  F8 06                    LDI 0x06            ; SET DMA
+  315  04D9  B0                       PHI R0              ; POINTER
+  316  04DA  F8 00                    LDI 0x00
+  317  04DC  A0                       PLO R0
+  318  04DD  80           L04DD:      GLO R0              ; INTERRUPT
+  319  04DE  E2                       SEX R2              ; ROUTINE
+  320  04DF  E2                       SEX R2
+  321  04E0  20                       DEC R0
+  322  04E1  A0                       PLO R0
+  323  04E2  E2                       SEX R2
+  324  04E3  20                       DEC R0
+  325  04E4  A0                       PLO R0
+  326  04E5  E2                       SEX R2
+  327  04E6  20                       DEC R0
+  328  04E7  A0                       PLO R0
+  329  04E8  3C DD                    BN1 L04DD           ; BR. TO INTERRUPT
+  330  04EA  30 CE                    BR  L04CE           ; BRANCH TO RETURN
+  331  04EC  00                       DB  0x00            ; STACK AREA
+  332  04ED  00                       DB  0x00
+  333  04EE  00                       DB  0x00
+  334  04EF  00                       DB  0x00
+  335  04F0  00                       DB  0x00
+  336                     
+  337                     ; ==================================================================
+  338                     ; Sprite / data table (referenced by the Draw Subroutine via RF; each
+  339                     ; sprite is 5 bytes, matching "LDI 0x05 / PLO RC" line counts above)
+  340                     ; ==================================================================
+  341  05F0                           ORG 0x05F0
+  342  05F0  18 3C FF 24  SPACESHIP:  DB 0x18, 0x3C, 0xFF, 0x24, 0x42
+       05F4  42
+  343  05F5  04 1F 04 0A  MAN:        DB 0x04, 0x1F, 0x04, 0x0A, 0x11
+       05F9  11
+  344  05FA  24 81 24 42  CRASH:      DB 0x24, 0x81, 0x24, 0x42, 0x18
+       05FE  18
+  345  05FF                           DS 1                ; TEMP. STORAGE (shown as "xx" -- uninitialized/scratch)
+
+0 error(s)
+
+SYMBOLS
+
+CRASH            05FA
+L0420            0420
+L0421            0421
+L0423            0423
+L0429            0429
+L0432            0432
+L044E            044E
+L0450            0450
+L0452            0452
+L0470            0470
+L0484            0484
+L048F            048F
+L0496            0496
+L0499            0499
+L04CE            04CE
+L04D0            04D0
+L04DD            04DD
+L0500            0500
+L051A            051A
+L051D            051D
+L0521            0521
+L0522            0522
+L0526            0526
+L0529            0529
+L0539            0539
+L053B            053B
+L0545            0545
+L054D            054D
+L0559            0559
+L055B            055B
+L0561            0561
+L0568            0568
+L056E            056E
+L0580            0580
+L0584            0584
+L0596            0596
+L059D            059D
+L05AC            05AC
+L05B6            05B6
+MAN              05F5
+SPACESHIP        05F0

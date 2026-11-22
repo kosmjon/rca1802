@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 01e3b856c0194c6ad8b90555c01746f1825ddab6349135c443d86b0d1d526782 # shrinks to byte = 0, baud = 110, bits = 7, par = 0, stop = 1, inv = true, rate = 0.96, jitter = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+cc 010191b5b4fc4621387d92a9fcc06072ad5cb2ffcb8b02f0339da7d44a114cc0 # shrinks to byte = 13, baud = 110, bits = 8, par = 2, stop = 1, inv = false, rate = 0.96, jitter = [0.09040609913013381, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.09270420475723747, 0.0]

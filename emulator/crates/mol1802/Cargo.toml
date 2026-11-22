@@ -1,0 +1,19 @@
+[package]
+name = "mol1802"
+description = "Machine-oriented language that transpiles to asm1802 source"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "mol1802"
+path = "src/main.rs"
+
+[dependencies]
+asm1802 = { workspace = true }
+
+[dev-dependencies]
+cdp1802 = { workspace = true }

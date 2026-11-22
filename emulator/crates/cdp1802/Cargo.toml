@@ -1,0 +1,11 @@
+[package]
+name = "cdp1802"
+description = "RCA CDP1802 (COSMAC) CPU core and disassembler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }

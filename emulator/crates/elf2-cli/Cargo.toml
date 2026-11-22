@@ -1,0 +1,13 @@
+[package]
+name = "elf2-cli"
+description = "Native command-line runner for the Netronics Elf II emulator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "elf2-cli"
+path = "src/main.rs"
+
+[dependencies]
+elf2 = { workspace = true }
