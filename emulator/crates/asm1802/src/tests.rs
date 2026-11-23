@@ -581,3 +581,243 @@ fn predefined_names_select_a_branch_from_the_start() {
     assert!(a.ok(), "{:?}", a.errors);
     assert_eq!(a.to_bin().unwrap().1, [7]);
 }
+
+// ---- MACRO / REPT -------------------------------------------------------
+
+const PBLOCK_MACROS: &str = "\
+INIT_PBLOCK .MACRO PAGE_ADDR
+        LDI     HIGH(PAGE_ADDR)
+        PHI     R7
+        .ENDM
+GET_PBYTE .MACRO OFFSET
+        LDI     LOW(OFFSET)
+        PLO     R7
+        LDN     R7
+        .ENDM
+PUT_PBYTE .MACRO OFFSET
+        LDI     LOW(OFFSET)
+        PLO     R7
+        STR     R7
+        .ENDM
+ALU_PBYTE .MACRO OP, OFFSET
+        LDI     LOW(OFFSET)
+        PLO     R7
+        SEX     R7
+        OP                      ; D = D <OP> M(R7)
+        SEX     R2
+        .ENDM
+";
+
+#[test]
+fn parameterized_macros_expand() {
+    let src = format!(
+        "{PBLOCK_MACROS}        ORG 0x100\n        INIT_PBLOCK 0x3412\n        GET_PBYTE 5\n        PUT_PBYTE 0x1206\n        ALU_PBYTE ADD, 7\n        ALU_PBYTE xor , 8 ; trailing\n"
+    );
+    let a = asm(&src);
+    assert_eq!(
+        bytes_at(&a, 0x100, 23),
+        vec![
+            0xF8, 0x34, 0xB7, // INIT_PBLOCK
+            0xF8, 0x05, 0xA7, 0x07, // GET_PBYTE 5
+            0xF8, 0x06, 0xA7, 0x57, // PUT_PBYTE 0x1206
+            0xF8, 0x07, 0xA7, 0xE7, 0xF4, 0xE2, // ALU_PBYTE ADD, 7
+            0xF8, 0x08, 0xA7, 0xE7, 0xF3, 0xE2, // ALU_PBYTE xor, 8
+        ]
+    );
+    // The call stays in the listing (as a comment) ahead of its expansion.
+    let lst = a.listing_text();
+    assert!(lst.contains("; GET_PBYTE 5"), "{lst}");
+}
+
+#[test]
+fn macro_with_label_and_no_parameters() {
+    let a = asm("TWO .MACRO\n  NOP\n  NOP\n  .ENDM\n  ORG 0x10\nSTART: TWO\nAFTER NOP\n");
+    assert_eq!(sym(&a, "START"), 0x10);
+    assert_eq!(sym(&a, "AFTER"), 0x12);
+}
+
+#[test]
+fn macros_can_call_macros_and_names_are_case_insensitive() {
+    let a = asm(
+        "ONE .MACRO X\n  LDI X\n  .ENDM\nTWICE .macro Y\n  one Y\n  ONE Y+1\n  .endm\n  twice 5\n",
+    );
+    assert_eq!(bytes_at(&a, 0, 4), vec![0xF8, 0x05, 0xF8, 0x06]);
+}
+
+#[test]
+fn macro_directives_work_without_the_dot_and_in_column_one() {
+    let a = asm("M MACRO\n  NOP\nENDM\n  M\n  M\n");
+    assert_eq!(bytes_at(&a, 0, 2), vec![0xC4, 0xC4]);
+}
+
+#[test]
+fn local_labels_with_unique_suffix() {
+    let src =
+        "WAIT .MACRO N\n  LDI N\nLOOP\\@: SMI 1\n  BNZ LOOP\\@\n  .ENDM\n  WAIT 3\n  WAIT 4\n";
+    let a = asm(src);
+    assert_eq!(
+        bytes_at(&a, 0, 12),
+        vec![0xF8, 3, 0xFF, 1, 0x3A, 2, 0xF8, 4, 0xFF, 1, 0x3A, 8]
+    );
+}
+
+#[test]
+fn macro_argument_edge_cases() {
+    // A parameter is replaced only as a whole word, never inside quotes,
+    // comments or a `#` hex literal.
+    let a = asm("M .MACRO F0\n  LDI #F0\n  DB 'F0'\n  DB F0 ; F0\n  .ENDM\n  M 9\n");
+    assert_eq!(bytes_at(&a, 0, 4), vec![0xF8, 0xF0, b'F', b'0']);
+    assert_eq!(a.byte(4), Some(9));
+    // Commas inside parentheses stay in one argument.
+    let a = asm("M .MACRO V\n  DB V\n  .ENDM\n  M LOW(0x1234)\n");
+    assert_eq!(a.byte(0), Some(0x34));
+}
+
+#[test]
+fn macro_errors() {
+    let cases = [
+        (
+            "M .MACRO A\n NOP\n .ENDM\n M\n",
+            "takes 1 argument(s), got 0",
+        ),
+        (
+            "M .MACRO\n NOP\n .ENDM\n M 1\n",
+            "takes 0 argument(s), got 1",
+        ),
+        ("M .MACRO\n NOP\n", "no matching ENDM"),
+        (" .ENDM\n", "ENDM without MACRO"),
+        (" .ENDR\n", "ENDR without REPT"),
+        (" .MACRO A\n NOP\n .ENDM\n", "needs a name"),
+        ("M .MACRO A, A\n NOP\n .ENDM\n", "repeated"),
+        ("M .MACRO 1A\n NOP\n .ENDM\n", "bad parameter"),
+        ("M .MACRO\n .ENDM\nM .MACRO\n .ENDM\n", "already defined"),
+        ("M .MACRO\n  M\n .ENDM\n  M\n", "nested more than"),
+    ];
+    for (src, want) in cases {
+        let errs = errors(src);
+        assert!(
+            errs.iter().any(|e| e.contains(want)),
+            "{src:?}: wanted {want:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn macro_defined_in_a_false_branch_is_not_defined() {
+    let errs = errors("IFDEF NOPE\nM .MACRO\n NOP\n .ENDM\nENDIF\n  M\n");
+    assert!(
+        errs.iter().any(|e| e.contains("unknown mnemonic")),
+        "{errs:?}"
+    );
+}
+
+#[test]
+fn macro_body_can_use_conditionals() {
+    let a = asm("DEFINE ON\nM .MACRO\n IFDEF ON\n  NOP\n ELSE\n  IDL\n ENDIF\n .ENDM\n  M\n");
+    assert_eq!(a.byte(0), Some(0xC4));
+}
+
+#[test]
+fn rept_repeats_its_body() {
+    let a = asm("  .REPT 3\n  NOP\n  .ENDR\n  ORG $+0\nEND_ NOP\n");
+    assert_eq!(bytes_at(&a, 0, 4), vec![0xC4; 4]);
+    assert_eq!(sym(&a, "END_"), 3);
+    // The count is an expression; zero repeats nothing.
+    let a = asm("  REPT 2*2\n  DB 1\n  ENDR\n  REPT 0\n  DB 9\n  ENDR\nX DB 0\n");
+    assert_eq!(sym(&a, "X"), 4);
+}
+
+#[test]
+fn rept_nests_and_works_inside_macros() {
+    let a = asm("  .REPT 2\n  .REPT 3\n  DB 7\n  .ENDR\n  DB 8\n  .ENDR\n");
+    assert_eq!(bytes_at(&a, 0, 8), vec![7, 7, 7, 8, 7, 7, 7, 8]);
+    let a = asm("FILL .MACRO N, V\n  .REPT N\n  DB V\n  .ENDR\n  .ENDM\n  FILL 3, 0xAA\n");
+    assert_eq!(bytes_at(&a, 0, 3), vec![0xAA; 3]);
+}
+
+#[test]
+fn rept_gives_each_iteration_its_own_local_labels() {
+    let a = asm("  .REPT 2\nL\\@: NOP\n  BR L\\@\n  .ENDR\n");
+    assert_eq!(bytes_at(&a, 0, 6), vec![0xC4, 0x30, 0, 0xC4, 0x30, 3]);
+}
+
+#[test]
+fn rept_errors() {
+    let cases = [
+        ("  .REPT\n NOP\n .ENDR\n", "missing expression"),
+        ("  .REPT FOO\n NOP\n .ENDR\n", "constant expression"),
+        ("  .REPT -1\n NOP\n .ENDR\n", "out of range"),
+        ("  .REPT 70000\n NOP\n .ENDR\n", "out of range"),
+        ("  .REPT 2\n NOP\n", "no matching ENDR"),
+    ];
+    for (src, want) in cases {
+        let errs = errors(src);
+        assert!(
+            errs.iter().any(|e| e.contains(want)),
+            "{src:?}: wanted {want:?}, got {errs:?}"
+        );
+    }
+}
+
+// ---- IF / ENDIF ----------------------------------------------------------
+
+#[test]
+fn if_keeps_or_drops_lines_by_a_constant_expression() {
+    let a = asm("  .IF 2 > 0\n  DB 1\n  .ELSE\n  DB 2\n  .ENDIF\n  IF 0\n  DB 3\n  ENDIF\n  IF 1+1 == 2 ; yes\n  DB 4\n  ENDIF\n");
+    assert_eq!(bytes_at(&a, 0, 2), vec![1, 4]);
+    assert_eq!(a.byte(2), None);
+}
+
+#[test]
+fn if_nests_and_a_false_branch_is_not_evaluated() {
+    // The inner condition uses an unknown name, but it is never evaluated.
+    let a = asm("  IF 0\n  IF NOSUCH\n  DB 1\n  ENDIF\n  ELSE\n  DB 2\n  ENDIF\n");
+    assert_eq!(a.byte(0), Some(2));
+}
+
+#[test]
+fn if_errors() {
+    let cases = [
+        ("  IF\n  ENDIF\n", "missing expression"),
+        ("  IF FOO\n  ENDIF\n", "constant expression"),
+        ("  IF 1\n", "missing ENDIF"),
+    ];
+    for (src, want) in cases {
+        let errs = errors(src);
+        assert!(
+            errs.iter().any(|e| e.contains(want)),
+            "{src:?}: wanted {want:?}, got {errs:?}"
+        );
+    }
+}
+
+/// A macro that picks its code from its parameters, as in a stack-frame
+/// `LEAVE`: `IF` on an argument, `REPT` counts built from arguments.
+#[test]
+fn if_and_rept_driven_by_macro_arguments() {
+    let leave = "\
+LEAVE   .MACRO  ARGS, LOCALS
+        .IF     ARGS > 0
+        .REPT   (2 + ARGS)
+        INC     R7
+        .ENDR                   ; R7 -> Arg 1
+        DEC     R8
+        .ENDIF
+        .REPT   (LOCALS + 2 + ARGS)
+        INC     R2
+        .ENDR
+        SEP     R5
+        .ENDM
+";
+    // ARGS = 0: no R7 slide and no DEC R8; 2 + LOCALS INC R2, then SEP R5.
+    let a = asm(&format!("{leave}  LEAVE 0, 1\n"));
+    assert_eq!(bytes_at(&a, 0, 4), vec![0x12, 0x12, 0x12, 0xD5]);
+    assert_eq!(a.byte(4), None);
+    // ARGS = 2, LOCALS = 1: 4 INC R7, DEC R8, then 5 INC R2, SEP R5.
+    let a = asm(&format!("{leave}  LEAVE 2, 1\n"));
+    let mut want = vec![0x17; 4];
+    want.push(0x28);
+    want.extend([0x12; 5]);
+    want.push(0xD5);
+    assert_eq!(bytes_at(&a, 0, want.len()), want);
+}

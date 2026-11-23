@@ -5,6 +5,7 @@
 //! | Operator | Meaning |
 //! |---|---|
 //! | `LOW x`, `HIGH x` | low / high byte of everything that follows |
+//! | `==`, `!=`, `<`, `<=`, `>`, `>=` | comparison: 1 if true, else 0 (signed) |
 //! | `\|` | bitwise or |
 //! | `^` | bitwise exclusive or |
 //! | `&` | bitwise and |
@@ -103,7 +104,30 @@ impl Parser<'_> {
     }
 
     fn expr(&mut self) -> Result<i64, String> {
-        self.or()
+        self.compare()
+    }
+
+    fn compare(&mut self) -> Result<i64, String> {
+        let mut v = self.or()?;
+        loop {
+            let test: fn(i64, i64) -> bool = if self.eat("==") {
+                |a, b| a == b
+            } else if self.eat("!=") {
+                |a, b| a != b
+            } else if self.eat("<=") {
+                |a, b| a <= b
+            } else if self.eat(">=") {
+                |a, b| a >= b
+            } else if self.eat("<") {
+                |a, b| a < b
+            } else if self.eat(">") {
+                |a, b| a > b
+            } else {
+                return Ok(v);
+            };
+            let r = self.or()?;
+            v = i64::from(test(v, r));
+        }
     }
 
     fn or(&mut self) -> Result<i64, String> {
@@ -414,6 +438,15 @@ mod tests {
         assert_eq!(ev("LOW $+3"), 0x03);
         assert_eq!(ev("HIGH BUFF-0x100"), 0x0C);
         assert_eq!(ev("low(BUFF)"), 0xB0);
+        assert_eq!(ev("2 > 0"), 1);
+        assert_eq!(ev("0>0"), 0);
+        assert_eq!(ev("1+1==2"), 1);
+        assert_eq!(ev("3 != 3"), 0);
+        assert_eq!(ev("2<=2"), 1);
+        assert_eq!(ev("1>=2"), 0);
+        assert_eq!(ev("1<<2 < 5"), 1);
+        assert_eq!(ev("1|2 == 3"), 1);
+        assert_eq!(ev("(1<2)+(2<1)"), 1);
     }
 
     #[test]

@@ -30,6 +30,9 @@
 //! | `INCLUDE "file"` | assemble another file's lines here (quotes optional; relative to the including file) |
 //! | `DEFINE name` | mark `name` as defined, for `IFDEF`/`IFNDEF` (no value; distinct from `EQU`) |
 //! | `IFDEF name` / `IFNDEF name` ... `ELSE` ... `ENDIF` | keep or drop lines depending on whether `name` is defined |
+//! | `IF expr` ... `ELSE` ... `ENDIF` | keep or drop lines depending on a constant expression (non-zero is true) |
+//! | `name MACRO p1, p2` ... `ENDM` | define a macro with parameters (see "Macros" below) |
+//! | `REPT count` ... `ENDR` | repeat the lines in between `count` times |
 //! | `CALL addr` | `SEP R4` then `DW addr` (standard call technique) |
 //! | `RETURN` / `RETN` | `SEP R5` |
 //! | `SEP R7 x` | `SEP R7` then `DB x` (Tiny BASIC "FECH" macro; written with one space) |
@@ -57,9 +60,61 @@
 //! - Remarks such as `BC * !20 '='` (the error number) are skipped.
 //! - `LB` takes a byte, `LN` a word, `SX` a depth 0-7.
 //!
+//! # Macros and repetition
+//!
+//! ```text
+//! ALU_PBYTE .MACRO OP, OFFSET
+//!         LDI     LOW(OFFSET)
+//!         PLO     R7
+//!         SEX     R7
+//!         OP                      ; D = D <OP> M(R7)
+//!         SEX     R2
+//!         .ENDM
+//!
+//!         ALU_PBYTE ADD, 7        ; expands to the five lines above
+//!
+//!         .REPT 4
+//!         NOP
+//!         .ENDR
+//! ```
+//!
+//! Like conditional assembly, both are plain text expansion done before
+//! anything is parsed as an instruction. The leading dot on `MACRO`, `ENDM`,
+//! `REPT` and `ENDR` is optional, and they are not case sensitive.
+//!
+//! - **Definition.** The macro name is the column-1 label of the `MACRO`
+//!   line, followed by comma-separated parameter names. A macro has to be
+//!   defined before it is used. Defining a name twice is an error.
+//! - **Call.** Write the macro name where a mnemonic goes, with its
+//!   arguments separated by commas (spaces are allowed after a comma). An
+//!   argument may contain spaces, and commas inside parentheses or quotes
+//!   do not split it. The argument count must match. Unlike an instruction
+//!   line, text after the last argument is not a comment unless it starts
+//!   with `;`. A label in front of the call labels the first expanded line.
+//!   A macro name wins over a mnemonic of the same name.
+//! - **Substitution.** In the body, each parameter is replaced by its
+//!   argument wherever it appears as a whole word, in code only (not in a
+//!   `;` comment, a quoted string, or a `#` hex literal such as `#F0`).
+//!   Arguments are text, not values, so an argument can be a mnemonic
+//!   (`OP` above), a register, or any expression.
+//! - **Local labels.** `\@` in a body is replaced by `_` and a number that
+//!   is different for every expansion, so `LOOP\@:` and `BNZ LOOP\@` make a
+//!   label that is unique to each use of the macro.
+//! - **Nesting.** A macro can call other macros, use `REPT`, and contain
+//!   `IFDEF`/`IFNDEF`. Nesting (including a macro that calls itself) is
+//!   limited to 16 levels, and all expansions together to a million lines.
+//! - **`REPT count`.** The count is a constant expression (numbers and
+//!   operators, with no symbols, since no symbol has a value yet) from 0 to
+//!   65536. Parameters of an enclosing macro may be used in it. `REPT`
+//!   blocks nest, and `\@` is different in every iteration.
+//! - **Listing and errors.** The call (or `REPT`) line is shown in the
+//!   listing as a comment, followed by the expanded lines, which all carry
+//!   the call's line number, as do any errors in them.
+//!
 //! # Conditional assembly
 //!
-//! `DEFINE`, `IFDEF`, `IFNDEF`, `ELSE` and `ENDIF` are resolved as text, in
+//! `DEFINE`, `IFDEF`, `IFNDEF`, `IF`, `ELSE` and `ENDIF` (each may be written
+//! with a leading dot, as `.IF`) are resolved as text, in
 //! one pass over the file (the same pass that expands `INCLUDE`), before
 //! anything is parsed as an instruction. This lets one shared, `INCLUDE`d
 //! file adapt to different callers: the including file `DEFINE`s a name
@@ -70,6 +125,7 @@
 //! command-line `-D` would be.
 
 mod expr;
+mod macros;
 mod opcodes;
 
 use std::collections::BTreeMap;
@@ -77,6 +133,7 @@ use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use expr::{eval, is_symbol_char, is_symbol_start, parse_string, Symbols};
+use macros::{BlockLine, Macro};
 use opcodes::Kind;
 
 const MAX_PASSES: usize = 20;
@@ -311,6 +368,7 @@ pub fn assemble_with(name: &str, source: &str, defines: &[&str], load: &mut Load
     let mut defined: std::collections::HashSet<String> =
         defines.iter().map(|d| d.to_ascii_uppercase()).collect();
     let mut cond = Vec::new();
+    let mut mac = MacroState::default();
     expand(
         0,
         source,
@@ -320,6 +378,9 @@ pub fn assemble_with(name: &str, source: &str, defines: &[&str], load: &mut Load
         &mut lines,
         &mut defined,
         &mut cond,
+        &mut mac,
+        0,
+        None,
     );
     let mut asm = assemble_lines(&files, &lines);
     if !cond.is_empty() {
@@ -348,9 +409,164 @@ struct CondFrame {
     seen_else: bool,
 }
 
+/// The deepest nesting of macro calls and `REPT` blocks.
+const MAX_MACRO_DEPTH: usize = 16;
+/// The most lines all macro calls and `REPT`s together may generate.
+const MAX_GENERATED_LINES: usize = 1_000_000;
+/// The most iterations one `REPT` may ask for.
+const MAX_REPT_COUNT: i64 = 0x10000;
+
+/// Macro definitions and expansion bookkeeping, shared across all files.
+#[derive(Default)]
+struct MacroState {
+    defs: std::collections::HashMap<String, std::rc::Rc<Macro>>,
+    /// Source of the number `\@` expands to (one per expansion).
+    next_id: usize,
+    /// Lines generated so far.
+    generated: usize,
+}
+
+impl MacroState {
+    /// Checks the nesting depth and size limits before one more expansion
+    /// of `lines` lines.
+    fn begin(&mut self, depth: usize, lines: usize) -> Result<(), String> {
+        if depth >= MAX_MACRO_DEPTH {
+            return Err(format!(
+                "macros and REPT nested more than {MAX_MACRO_DEPTH} deep (recursive macro?)"
+            ));
+        }
+        self.generated += lines.max(1);
+        if self.generated > MAX_GENERATED_LINES {
+            return Err(format!(
+                "macros and REPT generated more than {MAX_GENERATED_LINES} lines"
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// A listing-only line (a comment) standing in for a directive that was
+/// consumed, carrying `error` if there is one.
+fn note_line(file: usize, line: usize, text: &str, error: Option<String>) -> SrcLine {
+    SrcLine {
+        file,
+        line,
+        text: format!("; {}", text.trim()),
+        error,
+    }
+}
+
+/// Collects the body of a `MACRO` (`is_macro`) or `REPT` whose first body
+/// line is `lines[start]`, up to the matching `ENDM` / `ENDR`. Returns the
+/// body, the index of the line after the terminator, and whether the
+/// terminator was found.
+fn collect_block(lines: &[&str], start: usize, is_macro: bool) -> (Vec<String>, usize, bool) {
+    let mut depth = 1usize;
+    let mut body = Vec::new();
+    let mut i = start;
+    while i < lines.len() {
+        let l = lines[i];
+        i += 1;
+        match (macros::block_line(l), is_macro) {
+            (Some(BlockLine::MacroDef { .. }), true) | (Some(BlockLine::Rept(_)), false) => {
+                depth += 1;
+            }
+            (Some(BlockLine::EndM), true) | (Some(BlockLine::EndR), false) => {
+                depth -= 1;
+                if depth == 0 {
+                    return (body, i, true);
+                }
+            }
+            _ => {}
+        }
+        body.push(l.to_string());
+    }
+    (body, i, false)
+}
+
+/// Registers a macro, or says what is wrong with the definition.
+fn define_macro(
+    mac: &mut MacroState,
+    name: Option<String>,
+    params: Vec<String>,
+    body: Vec<String>,
+    closed: bool,
+) -> Result<(), String> {
+    let name = name.ok_or("MACRO needs a name (write `NAME MACRO params`)")?;
+    if !macros::is_name(&name) {
+        return Err(format!("bad macro name `{name}`"));
+    }
+    if !closed {
+        return Err(format!("MACRO `{name}` has no matching ENDM"));
+    }
+    for (i, p) in params.iter().enumerate() {
+        if !macros::is_name(p) {
+            return Err(format!("bad parameter `{p}` for macro `{name}`"));
+        }
+        if params[..i].iter().any(|q| q.eq_ignore_ascii_case(p)) {
+            return Err(format!("parameter `{p}` repeated in macro `{name}`"));
+        }
+    }
+    let key = name.to_ascii_uppercase();
+    if mac.defs.contains_key(&key) {
+        return Err(format!("macro `{name}` is already defined"));
+    }
+    mac.defs
+        .insert(key, std::rc::Rc::new(Macro { params, body }));
+    Ok(())
+}
+
+/// The body lines with parameters and `\@` substituted, as one text.
+fn join_lines(body: &[String], params: &[String], args: &[String], id: usize) -> String {
+    body.iter()
+        .map(|l| macros::substitute(l, params, args, id))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+struct NoSymbols;
+
+impl Symbols for NoSymbols {
+    fn lookup(&self, _: &str) -> Option<i64> {
+        None
+    }
+}
+
+/// The value of a `REPT` count. It is evaluated while the text is being
+/// expanded, before any symbol has a value, so it has to be a constant.
+fn rept_count(text: &str) -> Result<usize, String> {
+    let v = eval(text, 0, &NoSymbols).map_err(|e| format!("REPT count: {e}"))?;
+    if let Some(name) = v.undefined {
+        return Err(format!(
+            "REPT count must be a constant expression (`{name}` is not known yet)"
+        ));
+    }
+    if !(0..=MAX_REPT_COUNT).contains(&v.value) {
+        return Err(format!(
+            "REPT count {} out of range (0 to {MAX_REPT_COUNT})",
+            v.value
+        ));
+    }
+    Ok(v.value as usize)
+}
+
+/// The truth of an `IF` condition (non-zero is true). Like a `REPT` count,
+/// it is evaluated during expansion, so it can't use symbols.
+fn if_value(text: &str) -> Result<bool, String> {
+    let v = eval(text, 0, &NoSymbols).map_err(|e| format!("IF: {e}"))?;
+    match v.undefined {
+        Some(name) => Err(format!(
+            "IF needs a constant expression (`{name}` is not known yet; use IFDEF to test a name)"
+        )),
+        None => Ok(v.value != 0),
+    }
+}
+
 /// A `DEFINE` / `IFDEF` / `IFNDEF` / `ELSE` / `ENDIF` line.
 enum CondLine<'a> {
     Define(&'a str),
+    /// `IF expr`: the expression text.
+    If(&'a str),
     IfDef(&'a str),
     IfNDef(&'a str),
     Else,
@@ -366,10 +582,10 @@ fn cond_line(text: &str) -> Option<CondLine<'_>> {
     let trimmed = text.trim_start();
     let mut parts = trimmed.splitn(2, [' ', '\t']);
     let word = parts.next().unwrap_or("");
-    let up = word.to_ascii_uppercase();
-    let arg = parts
-        .next()
-        .unwrap_or("")
+    // Like the other directives, each may be written with a leading dot.
+    let up = word.strip_prefix('.').unwrap_or(word).to_ascii_uppercase();
+    let rest = parts.next().unwrap_or("");
+    let arg = rest
         .trim()
         .split(|c: char| c == ';' || is_ws(c as u8))
         .next()
@@ -378,6 +594,7 @@ fn cond_line(text: &str) -> Option<CondLine<'_>> {
         !arg.is_empty() && is_symbol_start(arg.as_bytes()[0]) && arg.bytes().all(is_symbol_char);
     match up.as_str() {
         "DEFINE" if name_ok => Some(CondLine::Define(arg)),
+        "IF" => Some(CondLine::If(macros::strip_comment(rest).trim())),
         "IFDEF" if name_ok => Some(CondLine::IfDef(arg)),
         "IFNDEF" if name_ok => Some(CondLine::IfNDef(arg)),
         "ELSE" => Some(CondLine::Else),
@@ -402,14 +619,105 @@ fn expand(
     out: &mut Vec<SrcLine>,
     defines: &mut std::collections::HashSet<String>,
     cond: &mut Vec<CondFrame>,
+    mac: &mut MacroState,
+    depth: usize,
+    fixed_line: Option<usize>,
 ) {
-    for (n, text) in source.lines().enumerate() {
+    let src_lines: Vec<&str> = source.lines().collect();
+    let mut idx = 0;
+    while idx < src_lines.len() {
+        let text = src_lines[idx];
+        // Lines produced by a macro or REPT all report the line that
+        // started it.
+        let line = fixed_line.unwrap_or(idx + 1);
+        idx += 1;
         let active = cond.iter().all(|f| f.taking);
+
+        if let Some(block) = macros::block_line(text) {
+            match block {
+                BlockLine::MacroDef { name, params } => {
+                    let (body, next, closed) = collect_block(&src_lines, idx, true);
+                    idx = next;
+                    if active {
+                        if let Err(e) = define_macro(mac, name, params, body, closed) {
+                            out.push(note_line(file, line, text, Some(e)));
+                        }
+                    }
+                }
+                BlockLine::Rept(count) => {
+                    let (body, next, closed) = collect_block(&src_lines, idx, false);
+                    idx = next;
+                    if active {
+                        let count = if closed {
+                            rept_count(&count)
+                        } else {
+                            Err("REPT has no matching ENDR".to_string())
+                        };
+                        match count {
+                            Err(e) => out.push(note_line(file, line, text, Some(e))),
+                            Ok(count) => {
+                                out.push(note_line(file, line, text, None));
+                                for _ in 0..count {
+                                    if let Err(e) = mac.begin(depth, body.len()) {
+                                        out.push(note_line(file, line, text, Some(e)));
+                                        break;
+                                    }
+                                    let id = mac.next_id;
+                                    mac.next_id += 1;
+                                    let expanded = join_lines(&body, &[], &[], id);
+                                    expand(
+                                        file,
+                                        &expanded,
+                                        files,
+                                        stack,
+                                        load,
+                                        out,
+                                        defines,
+                                        cond,
+                                        mac,
+                                        depth + 1,
+                                        Some(line),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                BlockLine::EndM | BlockLine::EndR => {
+                    if active {
+                        let msg = if block == BlockLine::EndM {
+                            "ENDM without MACRO"
+                        } else {
+                            "ENDR without REPT"
+                        };
+                        out.push(note_line(file, line, text, Some(msg.into())));
+                    }
+                }
+            }
+            continue;
+        }
+
         match cond_line(text) {
             Some(CondLine::Define(name)) => {
                 if active {
                     defines.insert(name.to_ascii_uppercase());
                 }
+                continue;
+            }
+            Some(CondLine::If(expr)) => {
+                // Only evaluated where it is live: a false branch may
+                // hold anything.
+                let mut taking = false;
+                if active {
+                    match if_value(expr) {
+                        Ok(v) => taking = v,
+                        Err(e) => out.push(note_line(file, line, text, Some(e))),
+                    }
+                }
+                cond.push(CondFrame {
+                    taking,
+                    seen_else: false,
+                });
                 continue;
             }
             Some(CondLine::IfDef(name)) => {
@@ -436,13 +744,13 @@ fn expand(
                     }
                     Some(_) => out.push(SrcLine {
                         file,
-                        line: n + 1,
+                        line,
                         text: text.to_string(),
                         error: Some("a second ELSE for the same IFDEF/IFNDEF".into()),
                     }),
                     None => out.push(SrcLine {
                         file,
-                        line: n + 1,
+                        line,
                         text: text.to_string(),
                         error: Some("ELSE without IFDEF/IFNDEF".into()),
                     }),
@@ -453,7 +761,7 @@ fn expand(
                 if cond.pop().is_none() {
                     out.push(SrcLine {
                         file,
-                        line: n + 1,
+                        line,
                         text: text.to_string(),
                         error: Some("ENDIF without IFDEF/IFNDEF".into()),
                     });
@@ -466,10 +774,58 @@ fn expand(
             continue;
         }
 
+        if let Some(f) = macros::fields(text) {
+            let found = mac.defs.get(&f.word.to_ascii_uppercase()).cloned();
+            if let (false, Some(m)) = (f.word.is_empty(), found) {
+                let args = macros::split_args(f.rest);
+                let err = if args.len() != m.params.len() {
+                    Err(format!(
+                        "macro `{}` takes {} argument(s), got {}",
+                        f.word,
+                        m.params.len(),
+                        args.len()
+                    ))
+                } else {
+                    mac.begin(depth, m.body.len())
+                };
+                // The call itself stays in the listing as a comment; a
+                // label on it still defines the label.
+                let shown = match f.label {
+                    Some(l) => format!("{l} ; {}", text[l.len()..].trim()),
+                    None => format!("; {}", text.trim()),
+                };
+                out.push(SrcLine {
+                    file,
+                    line,
+                    text: shown,
+                    error: err.clone().err(),
+                });
+                if err.is_ok() {
+                    let id = mac.next_id;
+                    mac.next_id += 1;
+                    let expanded = join_lines(&m.body, &m.params, &args, id);
+                    expand(
+                        file,
+                        &expanded,
+                        files,
+                        stack,
+                        load,
+                        out,
+                        defines,
+                        cond,
+                        mac,
+                        depth + 1,
+                        Some(line),
+                    );
+                }
+                continue;
+            }
+        }
+
         let target = include_target(text);
         out.push(SrcLine {
             file,
-            line: n + 1,
+            line,
             text: text.to_string(),
             error: None,
         });
@@ -504,6 +860,9 @@ fn expand(
                     out,
                     defines,
                     cond,
+                    mac,
+                    depth,
+                    None,
                 );
                 stack.pop();
             }
