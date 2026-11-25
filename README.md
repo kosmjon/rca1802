@@ -29,6 +29,7 @@ VID-1 serial terminal, and includes a debugger.
 | `emulator/crates/elf2-wasm` | WebAssembly bindings used by the web page |
 | `emulator/crates/elf2-cli` | Command-line emulator |
 | `emulator/crates/asm1802` | Cross-assembler (QELFEXE-style source dialect) |
+| `emulator/crates/dis1802` | Disassembler: labels branch/call targets, separates code from data, reassembles through `asm1802` |
 | `emulator/crates/mol1802` | MOL1802: a machine-oriented language that transpiles to `asm1802` source ([guide](emulator/crates/mol1802/GUIDE.md)) |
 | `emulator/web` | The static web front end (HTML, CSS, JS) |
 | `sample-code/asm`, `sample-code/m18` | Example programs in assembly and MOL1802 |

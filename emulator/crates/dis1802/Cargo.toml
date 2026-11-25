@@ -1,0 +1,20 @@
+[package]
+name = "dis1802"
+description = "Disassembler for the RCA CDP1802: labels branch targets and separates code from data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "dis1802"
+path = "src/main.rs"
+
+[dependencies]
+cdp1802 = { workspace = true }
+elf2 = { workspace = true }
+
+[dev-dependencies]
+asm1802 = { workspace = true }

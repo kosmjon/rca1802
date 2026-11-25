@@ -7,6 +7,7 @@ members = [
     "crates/elf2-cli",
     "crates/asm1802",
     "crates/mol1802",
+    "crates/dis1802",
 ]
 
 [workspace.package]
