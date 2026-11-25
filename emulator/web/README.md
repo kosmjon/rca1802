@@ -13,6 +13,16 @@ python -m http.server 1802 --bind 127.0.0.1 --directory web
 Open http://127.0.0.1:1802/. A local web server is needed: browsers do not load
 module workers or WebAssembly from `file://`.
 
+### Cache busting
+
+`index.html` loads `js/main.js?v=VERSION`; that `VERSION` flows to every module
+and asset the page pulls in (each reads its own `?v=` from `import.meta.url` and
+appends it to the worker, the sibling modules and the WebAssembly files). So one
+version stamp invalidates the whole module graph in a returning visitor's cache
+after a deploy. `python web/stamp-version.py [VERSION]` writes the stamp (default:
+a UTC timestamp); `build-web.cmd` runs it on every build, and the GitHub Pages
+workflow stamps the commit SHA. Nothing needs the version by hand.
+
 ## Using it
 
 - **Front panel**: click it, then type `0`-`F` for the hex keypad, `Enter` for IN

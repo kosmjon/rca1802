@@ -188,6 +188,8 @@
     No ROMs are included; load your own. A few sample programs are on the Load and save tab. Emulator core: Rust compiled to WebAssembly.
   </footer>
 
-  <script type="module" src="js/main.js"></script>
+  <!-- BUILD VERSION: the ?v= below busts caches of the whole module graph on
+       each deploy. build-web.cmd / the Pages workflow stamp a fresh value in. -->
+  <script type="module" src="js/main.js?v=20261125030320"></script>
 </body>
 </html>

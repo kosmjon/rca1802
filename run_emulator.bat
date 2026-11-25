@@ -13,6 +13,9 @@ if %errorlevel%==0 (
     wasm-pack build crates\elf2-wasm --target web --release --out-dir ..\..\web\pkg
     if errorlevel 1 (
         echo wasm-pack build failed; serving the existing build in web\pkg instead.
+    ) else (
+        rem Stamp a fresh cache-busting version so the rebuild isn't hidden by a cache.
+        python web\stamp-version.py
     )
 ) else (
     echo wasm-pack not found on PATH; serving the existing build in web\pkg.

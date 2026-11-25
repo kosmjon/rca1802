@@ -6,17 +6,24 @@
 //   &run=1              then set RUN
 //   ?fresh=1            ignore the saved machine state (ROMs are still loaded)
 
-import { FrontPanel } from './panel.js';
-import { PixieScreen } from './pixie.js';
-import { Vid1Terminal } from './terminal.js';
-import { hex4 } from './storage.js';
-import { Debugger } from './debugger.js';
+// Cache-busting build version, taken from this script's own ?v=... (set in
+// index.html, stamped at build time). It is appended to every module and
+// asset this page loads so a deploy is never masked by a stale browser cache.
+// Exported via a global for the modules loaded below.
+const V = new URL(import.meta.url).search; // e.g. "?v=20261125…" or ""
+const mod = (path) => import(new URL(path + V, import.meta.url).href);
+
+const { FrontPanel } = await mod('./panel.js');
+const { PixieScreen } = await mod('./pixie.js');
+const { Vid1Terminal } = await mod('./terminal.js');
+const { hex4 } = await mod('./storage.js');
+const { Debugger } = await mod('./debugger.js');
 
 const CONFIG_KEY = 'elf2.config';
 const params = new URLSearchParams(location.search);
 
 const status = document.getElementById('status');
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+const worker = new Worker(new URL('./worker.js' + V, import.meta.url), { type: 'module' });
 const send = (msg, transfer) => worker.postMessage(msg, transfer || []);
 
 const panel = new FrontPanel(send);
