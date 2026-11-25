@@ -31,15 +31,11 @@
 //   {type: 'loaded', msg} / {type: 'error', msg} / {type: 'text', id, text}
 //   {type: 'download', name, data, mime}
 
-// This worker is started from a URL carrying the build's ?v=... (see main.js);
-// propagate it to the wasm glue, the wasm binary and storage.js so the whole
-// worker-side graph is cache-busted together.
-const V = new URL(import.meta.url).search; // e.g. "?v=20261125…" or ""
-const wasmUrl = (p) => new URL(p + V, import.meta.url);
-const { default: init, Emulator, version, assemble_files, assemble_files_from } =
-  await import(wasmUrl('../pkg/elf2_wasm.js').href);
-const { openDb, getAllRoms, getRom, putRom, deleteRom, getState, putState, deleteState, sha256Hex, hex4 } =
-  await import(wasmUrl('./storage.js').href);
+// The whole worker (this script, the wasm glue, the wasm binary, storage.js) is
+// cache-busted together by the ?v=... on the worker URL main.js uses: a browser
+// keys a module worker by its full URL, so a new version fetches it all fresh.
+import init, { Emulator, version, assemble_files, assemble_files_from } from '../pkg/elf2_wasm.js';
+import { openDb, getAllRoms, getRom, putRom, deleteRom, getState, putState, deleteState, sha256Hex, hex4 } from './storage.js';
 
 const SLICE = 20000;          // max cycles per run() call
 const MAX_CATCH_UP_MS = 50;   // never try to catch up more than this after a stall
@@ -457,8 +453,8 @@ self.onmessage = (ev) => {
   queue = queue.then(async () => {
     try {
       if (m.type === 'init') {
-        // Pass the versioned .wasm URL so it is cache-busted like the rest.
-        wasm = await init({ module_or_path: wasmUrl('../pkg/elf2_wasm_bg.wasm') });
+        // init() loads elf2_wasm_bg.wasm next to the glue module.
+        wasm = await init();
         config = m.config || '{}';
         try {
           db = await openDb();

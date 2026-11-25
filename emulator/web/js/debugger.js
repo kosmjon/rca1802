@@ -1,9 +1,7 @@
 // Debugger panel: run control, registers, disassembly with breakpoints, memory
 // viewer/editor and a serial line monitor.
 
-// storage.js is loaded with this module's own ?v=... so the cache-busting
-// version propagates to it too (see main.js).
-const { hex4 } = await import(new URL('./storage.js' + new URL(import.meta.url).search, import.meta.url).href);
+import { hex4 } from './storage.js';
 
 const hex2 = (v) => v.toString(16).toUpperCase().padStart(2, '0');
 const $ = (id) => document.getElementById(id);
