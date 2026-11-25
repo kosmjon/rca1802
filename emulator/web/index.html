@@ -71,6 +71,7 @@
     <section id="files-panel" class="panel files-panel" aria-label="Files and machine">
       <div class="tabs" role="tablist">
         <button id="tab-load" class="tab active" role="tab" aria-selected="true" aria-controls="pane-load">Load and save</button>
+        <button id="tab-asm" class="tab" role="tab" aria-selected="false" aria-controls="pane-asm">Assemble and save</button>
         <button id="tab-roms" class="tab" role="tab" aria-selected="false" aria-controls="pane-roms">ROMs and machine</button>
       </div>
       <div id="pane-load" class="pane" role="tabpanel">
@@ -83,12 +84,35 @@
           <button id="boot-f000" title="Key in C0 F0 00 (LBR F000) at 0000">Key in LBR F000</button>
         </div>
         <div class="toolbar">
+          <label>Sample program <select id="sample-select"><option value="">(loading…)</option></select></label>
+          <button id="sample-load">Load sample</button>
+        </div>
+        <div class="toolbar">
           <span>Save memory</span>
           <label>from <input id="save-start" value="0000" size="5" spellcheck="false"></label>
           <label>to <input id="save-end" value="00FF" size="5" spellcheck="false"></label>
           <select id="save-format"><option value="hex">Intel HEX</option><option value="bin">binary</option></select>
           <button id="save-range">Save</button>
         </div>
+      </div>
+      <div id="pane-asm" class="pane" role="tabpanel" hidden>
+        <p class="hint">Add assembler (.asm) or MOL1802 (.m18) source; .m18 is transpiled first. Add files from more than one folder (or a whole folder) so INCLUDEs in a different folder are found. The main file is the one no other file includes; if that is unclear, choose it below. Assembling does not run the program: fix any errors, Load, then press RUN.</p>
+        <div class="toolbar">
+          <button id="asm-add-files">Add files…</button>
+          <button id="asm-add-folder">Add folder…</button>
+          <button id="asm-clear" disabled>Clear</button>
+          <label id="asm-main-wrap" hidden>main file <select id="asm-main"></select></label>
+          <button id="asm-build" disabled>Assemble</button>
+          <input type="file" id="asm-file" accept=".asm,.m18,.inc" multiple hidden>
+          <input type="file" id="asm-folder" webkitdirectory hidden>
+        </div>
+        <ul id="asm-filelist" class="asm-filelist"></ul>
+        <div class="toolbar">
+          <button id="asm-load" disabled title="Load the assembled program into RAM">Load</button>
+          <button id="asm-dl-hex" disabled>Download .hex</button>
+          <button id="asm-dl-lst" disabled>Download .lst</button>
+        </div>
+        <pre id="asm-output" class="asm-output" hidden></pre>
       </div>
       <div id="pane-roms" class="pane" role="tabpanel" hidden>
         <p class="hint">ROMs are kept in this browser only; the site does not include any.</p>
@@ -161,7 +185,7 @@
   </main>
 
   <footer class="dim">
-    No ROMs or programs are included; load your own files. Emulator core: Rust compiled to WebAssembly.
+    No ROMs are included; load your own. A few sample programs are on the Load and save tab. Emulator core: Rust compiled to WebAssembly.
   </footer>
 
   <script type="module" src="js/main.js"></script>

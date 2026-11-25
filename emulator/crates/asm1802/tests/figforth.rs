@@ -1,8 +1,8 @@
 //! Assemble the fig-FORTH 1802 port (RCA/FIG dialect: dotted directives,
 //! `H'xxxx` numbers, `.EQU name, value`) and check that it actually boots and
-//! runs in the emulator over the bit-banged serial port (`sample-code/asm/
-//! include/baud_serial.asm`), which replaces the CDP1854 UART the original
-//! source targeted.
+//! runs in the emulator over the bit-banged serial port
+//! (`sample-code/include/baud_serial.asm`), which replaces the CDP1854 UART
+//! the original source targeted.
 //!
 //! This source used to be checked byte-for-byte against a reference
 //! `FigForth.hex` shipped alongside it. That reference turned out to share

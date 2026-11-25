@@ -195,7 +195,10 @@ dependencies = [
 name = "elf2-wasm"
 version = "0.1.0"
 dependencies = [
+ "asm1802",
  "elf2",
+ "mol1802",
+ "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",

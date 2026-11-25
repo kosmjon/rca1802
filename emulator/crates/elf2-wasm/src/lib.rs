@@ -16,6 +16,255 @@ pub fn version() -> String {
     elf2::cdp1802::VERSION.to_string()
 }
 
+/// The last path component (file name) of `s`, lower-cased for comparison.
+fn basename_lower(s: &str) -> String {
+    s.rsplit(['/', '\\']).next().unwrap_or(s).to_ascii_lowercase()
+}
+
+/// Normalise a path for suffix comparison: lower-case, backslashes to
+/// slashes, and any leading `./` or `../` segments dropped.
+fn norm_path(s: &str) -> String {
+    let s = s.replace('\\', "/").to_ascii_lowercase();
+    let kept: Vec<&str> = s
+        .split('/')
+        .skip_while(|seg| seg.is_empty() || *seg == "." || *seg == "..")
+        .collect();
+    kept.join("/")
+}
+
+/// Finds the uploaded file an `INCLUDE "req"` names, among `files`. Prefers a
+/// path match (the uploaded path ends with the requested path, e.g.
+/// `proj/asm/include/baud_serial.asm` matches `include/baud_serial.asm`), so
+/// that two files with the same base name in different folders stay distinct.
+/// Falls back to a unique base-name match, which covers `INCLUDE "x"` when the
+/// uploaded file was added from a plain (path-less) file pick. Returns `None`
+/// if nothing matches, or if only an ambiguous base-name match exists.
+fn find_include<'a>(files: &'a [SourceFile], req: &str) -> Option<&'a SourceFile> {
+    let want = norm_path(req);
+    // 1. Exact normalised path, or uploaded path ending in `/want`.
+    let path_hits: Vec<&SourceFile> = files
+        .iter()
+        .filter(|f| {
+            let have = norm_path(&f.name);
+            have == want || have.ends_with(&format!("/{want}"))
+        })
+        .collect();
+    if let [one] = path_hits.as_slice() {
+        return Some(one);
+    }
+    if path_hits.len() > 1 {
+        return None; // ambiguous; caller reports "not found" for a clear message
+    }
+    // 2. Unique base-name match.
+    let base = basename_lower(req);
+    let name_hits: Vec<&SourceFile> = files
+        .iter()
+        .filter(|f| basename_lower(&f.name) == base)
+        .collect();
+    match name_hits.as_slice() {
+        [one] => Some(one),
+        _ => None,
+    }
+}
+
+/// True if `name` ends in `.m18` (case-insensitive), i.e. is MOL1802 source.
+fn is_m18(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() >= 4 && b[b.len() - 4..].eq_ignore_ascii_case(b".m18")
+}
+
+/// Replaces a `.m18` extension with `.asm` (case-insensitive match).
+fn as_asm_name(name: &str) -> String {
+    format!("{}.asm", &name[..name.len() - 4])
+}
+
+/// Transpiles every `.m18` file in `files` to `asm1802` source in place:
+/// the file is renamed to `.asm`, its text becomes the transpiled output,
+/// and its `INCLUDE "x.m18"` lines are rewritten to name `x.asm` (so they
+/// resolve against the other transpiled files). This mirrors the mol1802
+/// CLI's transpile-then-assemble pipeline. Returns the transpile diagnostics
+/// (file name attached), leaving `files` partly transformed if any failed.
+fn transpile_m18(files: &mut [SourceFile]) -> Vec<Diag> {
+    let mut errors = Vec::new();
+    for f in files.iter_mut() {
+        if !is_m18(&f.name) {
+            continue;
+        }
+        match mol1802::transpile(&f.text) {
+            Ok(asm) => {
+                let (asm, _targets) = mol1802::rewrite_m18_includes(&asm);
+                f.text = asm;
+                f.name = as_asm_name(&f.name);
+            }
+            Err(diags) => {
+                for d in diags {
+                    errors.push(Diag {
+                        // transpile leaves file empty; name it here.
+                        file: f.name.clone(),
+                        line: d.line,
+                        message: d.message,
+                    });
+                }
+            }
+        }
+    }
+    errors
+}
+
+/// Assemble uploaded source. `files_json` is a JSON array of
+/// `{ "name": string, "text": string }`. Files named `*.m18` are MOL1802
+/// source and are transpiled to `asm1802` first; `*.asm` (and `*.inc`) are
+/// assembled directly. `INCLUDE` is resolved against the uploaded set,
+/// matched on the base file name (case-insensitively), with a `.m18` include
+/// resolving to its transpiled `.asm`.
+///
+/// The entry file is the one no other uploaded file includes. If that is
+/// ambiguous (none or several), assembly is not attempted and the result's
+/// `main` is null with a `message` explaining why, so the caller can ask the
+/// user to choose; pass `main` to [`assemble_files_from`] to pick explicitly.
+///
+/// Returns JSON:
+/// `{ ok, main, hex, listing, errors: [{file,line,message}], lo, hi, message }`.
+#[wasm_bindgen]
+pub fn assemble_files(files_json: &str) -> String {
+    assemble_files_from(files_json, "")
+}
+
+/// Like [`assemble_files`], but assemble `main` (matched by base name) as the
+/// entry file. An empty `main` auto-detects it. A `.m18` main name also
+/// matches its transpiled `.asm`.
+#[wasm_bindgen]
+pub fn assemble_files_from(files_json: &str, main: &str) -> String {
+    let mut files: Vec<SourceFile> = match serde_json::from_str(files_json) {
+        Ok(f) => f,
+        Err(e) => return json!({ "ok": false, "message": format!("bad files JSON: {e}") }).to_string(),
+    };
+    if files.is_empty() {
+        return json!({ "ok": false, "message": "no files were given" }).to_string();
+    }
+
+    // MOL1802 (.m18) source must be transpiled to asm1802 before assembly.
+    // A .m18 main name refers to its transpiled .asm afterwards.
+    let main = if is_m18(main) { as_asm_name(main) } else { main.to_string() };
+    let main = main.as_str();
+    let transpile_errors = transpile_m18(&mut files);
+    if !transpile_errors.is_empty() {
+        let errors: Vec<_> = transpile_errors
+            .iter()
+            .map(|d| json!({ "file": d.file, "line": d.line, "message": d.message }))
+            .collect();
+        return json!({
+            "ok": false,
+            "main": first_root_name(&files, main),
+            "hex": "",
+            "listing": "",
+            "errors": errors,
+            "lo": -1,
+            "hi": -1,
+            "message": "MOL1802 transpile failed",
+        })
+        .to_string();
+    }
+
+    // Which uploaded files are named by some file's INCLUDE line.
+    let mut included = std::collections::HashSet::new();
+    for f in &files {
+        for line in f.text.lines() {
+            if let Some(req) = asm1802::include_name(line) {
+                if let Some(g) = find_include(&files, &req) {
+                    included.insert(g.name.clone());
+                }
+            }
+        }
+    }
+
+    let entry = if main.is_empty() {
+        let roots: Vec<usize> = (0..files.len()).filter(|&i| !included.contains(&files[i].name)).collect();
+        match roots.as_slice() {
+            [one] => &files[*one],
+            [] => {
+                return json!({ "ok": false, "main": serde_json::Value::Null,
+                    "message": "every file is included by another, so the main file is ambiguous; choose one" }).to_string();
+            }
+            many => {
+                let names: Vec<&str> = many.iter().map(|&i| files[i].name.as_str()).collect();
+                return json!({ "ok": false, "main": serde_json::Value::Null,
+                    "message": format!("several files are not included by any other, so the main file is ambiguous ({}); choose one", names.join(", ")) }).to_string();
+            }
+        }
+    } else {
+        match find_include(&files, main) {
+            Some(f) => f,
+            None => return json!({ "ok": false, "message": format!("main file `{main}` was not uploaded") }).to_string(),
+        }
+    };
+
+    let mut load = |req: &str, _from: &str| -> Result<(String, String), String> {
+        match find_include(&files, req) {
+            Some(f) => Ok((f.name.clone(), f.text.clone())),
+            None => Err(format!("`{req}` was not among the uploaded files")),
+        }
+    };
+    let asm = asm1802::assemble_with(&entry.name, &entry.text, &[], &mut load);
+
+    let errors: Vec<_> = asm
+        .errors
+        .iter()
+        .map(|d| json!({ "file": d.file, "line": d.line, "message": d.message }))
+        .collect();
+    let (lo, hi) = asm.range().map_or((-1, -1), |(l, h)| (i32::from(l), i32::from(h)));
+    json!({
+        "ok": asm.ok(),
+        "main": entry.name,
+        "hex": asm.to_hex(),
+        "listing": asm.listing_text(),
+        "errors": errors,
+        "lo": lo,
+        "hi": hi,
+    })
+    .to_string()
+}
+
+#[derive(serde::Deserialize)]
+struct SourceFile {
+    name: String,
+    text: String,
+}
+
+/// A diagnostic with its source file name, used while collecting transpile
+/// errors (which `mol1802` reports without a file name).
+struct Diag {
+    file: String,
+    line: usize,
+    message: String,
+}
+
+/// Best guess at the entry file name for a result returned before assembly
+/// (e.g. a transpile failure): the chosen `main` if given, else the sole
+/// file no other includes, else null. Only for display in the error report.
+fn first_root_name(files: &[SourceFile], main: &str) -> serde_json::Value {
+    if !main.is_empty() {
+        if let Some(f) = find_include(files, main) {
+            return json!(f.name);
+        }
+    }
+    let mut included = std::collections::HashSet::new();
+    for f in files {
+        for line in f.text.lines() {
+            if let Some(req) = asm1802::include_name(line) {
+                if let Some(g) = find_include(files, &req) {
+                    included.insert(g.name.clone());
+                }
+            }
+        }
+    }
+    let roots: Vec<&SourceFile> = files.iter().filter(|f| !included.contains(&f.name)).collect();
+    match roots.as_slice() {
+        [one] => json!(one.name),
+        _ => serde_json::Value::Null,
+    }
+}
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console, js_name = error)]
@@ -390,6 +639,112 @@ mod tests {
     #[test]
     fn version_matches_core() {
         assert_eq!(version(), elf2::cdp1802::VERSION);
+    }
+
+    #[test]
+    fn assemble_auto_detects_main_and_resolves_include() {
+        let files = r#"[
+            {"name":"main.asm","text":"        INCLUDE \"bits.inc\"\n        ORG 0\n        LDI THREE\n"},
+            {"name":"bits.inc","text":"THREE   EQU 3\n"}
+        ]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
+        assert_eq!(r["main"], "main.asm");
+        assert!(r["hex"].as_str().unwrap().contains("F803"), "hex: {}", r["hex"]); // LDI 3
+    }
+
+    #[test]
+    fn assemble_reports_missing_include() {
+        let files = r#"[{"name":"a.asm","text":"        INCLUDE \"gone.inc\"\n"}]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], false);
+        assert!(r["errors"].as_array().unwrap().iter().any(|e| e["message"].as_str().unwrap().contains("not among the uploaded")));
+    }
+
+    #[test]
+    fn include_resolves_by_subfolder_path_from_a_folder_pick() {
+        // Files added from a folder keep their relative paths. An
+        // `INCLUDE "include/bits.inc"` must find proj/asm/include/bits.inc.
+        let files = r#"[
+            {"name":"proj/asm/main.asm","text":"        ORG 0\n        INCLUDE \"include/bits.inc\"\n        LDI THREE\n"},
+            {"name":"proj/asm/include/bits.inc","text":"THREE EQU 3\n"}
+        ]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
+        assert_eq!(r["main"], "proj/asm/main.asm");
+        assert!(r["hex"].as_str().unwrap().contains("F803"));
+    }
+
+    #[test]
+    fn include_path_disambiguates_same_base_name_in_two_folders() {
+        // Two scrt.asm in different folders. The subfolder path in each
+        // INCLUDE selects the intended one even though the base names clash.
+        // `main` is chosen explicitly so neither scrt is treated as a root.
+        let files = r#"[
+            {"name":"a/main.asm","text":"        ORG 0\n        INCLUDE \"lib/scrt.asm\"\n        INCLUDE \"../other/scrt.asm\"\n        LDI K\n        LDI J\n"},
+            {"name":"a/lib/scrt.asm","text":"K EQU 7\n"},
+            {"name":"other/scrt.asm","text":"J EQU 9\n"}
+        ]"#;
+        let r: serde_json::Value =
+            serde_json::from_str(&assemble_files_from(files, "a/main.asm")).unwrap();
+        assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
+        // K=7 from a/lib/scrt.asm (F8 07) and J=9 from other/scrt.asm (F8 09).
+        let hex = r["hex"].as_str().unwrap();
+        assert!(hex.contains("F807"), "hex: {hex}");
+        assert!(hex.contains("F809"), "hex: {hex}");
+    }
+
+    #[test]
+    fn include_falls_back_to_unique_base_name() {
+        // Plain (path-less) picks: INCLUDE "bits.inc" finds bits.inc anywhere.
+        let files = r#"[
+            {"name":"main.asm","text":"        ORG 0\n        INCLUDE \"bits.inc\"\n        LDI THREE\n"},
+            {"name":"bits.inc","text":"THREE EQU 3\n"}
+        ]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
+    }
+
+    #[test]
+    fn assemble_transpiles_m18_before_assembling() {
+        // A .m18 main (MOL1802 `source:dest` statements) that includes another
+        // .m18. The pipeline must transpile both before assembling, and the
+        // `INCLUDE "lib.m18"` must resolve to the transpiled lib.asm.
+        let files = r#"[
+            {"name":"main.m18","text":"        ORG 0\n        INCLUDE \"lib.m18\"\n        0x1234:R3\n        SEP R3\n"},
+            {"name":"lib.m18","text":"HELPER: R3.0:D\n        SEP R5\n"}
+        ]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
+        assert_eq!(r["main"], "main.asm");
+        assert!(!r["hex"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn assemble_reports_m18_transpile_errors_with_file_name() {
+        // `#FF:R3` (an 8-bit immediate into a full register) is a documented
+        // MOL1802 error; it must be reported against the .m18 file.
+        let files = r#"[{"name":"bad.m18","text":"        #FF:R3\n"}]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], false, "unexpectedly ok: {r}");
+        assert_eq!(r["message"], "MOL1802 transpile failed");
+        assert!(r["errors"].as_array().unwrap().iter().all(|e| e["file"] == "bad.m18"));
+    }
+
+    #[test]
+    fn assemble_ambiguous_main_asks_to_choose() {
+        let files = r#"[
+            {"name":"one.asm","text":"        ORG 0\n        NOP\n"},
+            {"name":"two.asm","text":"        ORG 0\n        NOP\n"}
+        ]"#;
+        let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
+        assert_eq!(r["ok"], false);
+        assert!(r["main"].is_null());
+        assert!(r["message"].as_str().unwrap().contains("ambiguous"));
+        // Choosing one resolves it.
+        let r: serde_json::Value = serde_json::from_str(&assemble_files_from(files, "two.asm")).unwrap();
+        assert_eq!(r["ok"], true);
+        assert_eq!(r["main"], "two.asm");
     }
 
     #[test]

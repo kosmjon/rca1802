@@ -169,6 +169,17 @@ input[type=text], #file-addr { background: #111; color: var(--text); border: 1px
 .files-panel .hint { margin: 0 0 6px; }
 .files-panel .rom-table { display: block; overflow-x: auto; }
 .files-panel #file-msg { margin: 10px 0 0; }
+.asm-output {
+  margin: 10px 0 0; max-height: 300px; overflow: auto;
+  background: #15171b; border: 1px solid var(--edge); border-radius: 4px;
+  padding: 6px 8px; font: 12px ui-monospace, monospace; white-space: pre;
+}
+.asm-output.error { color: #ff8a80; border-color: #7a1f1f; }
+.asm-filelist { list-style: none; margin: 8px 0 0; padding: 0; font: 12px ui-monospace, monospace; }
+.asm-filelist li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.asm-filelist li span { overflow-wrap: anywhere; }
+.asm-file-remove { border: none; background: none; color: var(--dim); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+.asm-file-remove:hover { color: #ff8a80; }
 
 /* Narrower windows: files and machine go below; then everything stacks. */
 @media (max-width: 1500px) {

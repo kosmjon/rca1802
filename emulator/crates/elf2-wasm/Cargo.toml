@@ -10,7 +10,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 elf2 = { workspace = true }
+asm1802 = { workspace = true }
+mol1802 = { workspace = true }
 wasm-bindgen = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

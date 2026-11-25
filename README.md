@@ -1,5 +1,7 @@
 # RCA 1802 / Netronics Elf II
 
+![The RCA 1802 / Netronics Elf II emulator running in a browser](rca1802-emulator.png)
+
 An RCA CDP1802 (COSMAC) emulator written in Rust, a cross-assembler, a small
 machine-oriented language that compiles to 1802 assembly, and a browser front end.
 

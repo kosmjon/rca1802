@@ -912,6 +912,14 @@ fn include_target(text: &str) -> Option<Result<String, String>> {
     Some(Ok(name))
 }
 
+/// The file name an `INCLUDE` line names, or `None` for any other line.
+/// Uses the same parser the assembler uses, so callers (such as the web
+/// front end, which resolves includes against uploaded files) agree with it.
+/// A malformed `INCLUDE` yields `None` here; the assembler reports it.
+pub fn include_name(line: &str) -> Option<String> {
+    include_target(line).and_then(Result::ok)
+}
+
 fn assemble_lines(files: &[String], lines: &[SrcLine]) -> Assembly {
     let mut il_mode = false;
     let parsed: Vec<Parsed> = lines

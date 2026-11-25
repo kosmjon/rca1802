@@ -19,7 +19,7 @@ SCRT:   LDI PAGE ; PAGE:R2.1:R3.1:R4.1:R5.1
 ;
         INCLUDE "scrt.asm"
 ;
-        INCLUDE "../asm/include/baud_serial.asm"
+        INCLUDE "../include/baud_serial.asm"
 ;
 MAIN:   CALL BSINIT;            SET UP THE BIT-BANGED SERIAL PORT (ONCE)
 LOOP:   CALL SERIN;             WAIT FOR CHAR FROM ASCII KEYBOARD

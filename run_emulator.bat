@@ -10,7 +10,7 @@ cd /d "%~dp0emulator"
 where wasm-pack >nul 2>nul
 if %errorlevel%==0 (
     echo Building WebAssembly module...
-    wasm-pack build crates\elf2-wasm --target web --release --out-dir ..\web\pkg
+    wasm-pack build crates\elf2-wasm --target web --release --out-dir ..\..\web\pkg
     if errorlevel 1 (
         echo wasm-pack build failed; serving the existing build in web\pkg instead.
     )
@@ -19,7 +19,8 @@ if %errorlevel%==0 (
 )
 
 echo Starting local web server on http://127.0.0.1:1802/ ...
-start "Elf II emulator server (close this window to stop)" cmd /k python -m http.server 1802 --bind 127.0.0.1 --directory web
+rem serve.py sends no-store so a rebuild is never hidden by the browser cache.
+start "Elf II emulator server (close this window to stop)" cmd /k python web\serve.py 1802
 
 timeout /t 2 /nobreak >nul
 start "" http://127.0.0.1:1802/

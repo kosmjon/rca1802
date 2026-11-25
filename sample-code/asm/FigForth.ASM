@@ -133,7 +133,7 @@
 ;
 ;            RETURN STACK      R0
 ;
-;       ---------------------- 
+;       ----------------------
 ;
 ;          TERMINAL BUFFER
 ;
@@ -259,7 +259,7 @@ WBR:    LDA RB
 EXE:    .DW *+2
         LDA R9
         PHI RB
-        LDN R9              ; LOAD W FROM STACK              
+        LDN R9              ; LOAD W FROM STACK
         PLO RB
         DEC R9
         DEC R9
@@ -1339,7 +1339,7 @@ RETURN  PHI 1
         BR RETURN-1
         SEP R3
         ;
-        INCLUDE include/baud_serial.asm
+        INCLUDE ../include/baud_serial.asm
         ;
         ;
 NEST:   GHI RA

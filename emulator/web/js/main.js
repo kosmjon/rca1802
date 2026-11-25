@@ -66,10 +66,11 @@ worker.onmessage = (ev) => {
       else localStorage.setItem(CONFIG_KEY, m.config);
       break;
     case 'download': download(m.name, m.data, m.mime); break;
-    case 'text': {
+    case 'text':
+    case 'reply': {
       const done = textWaiters.get(m.id);
       textWaiters.delete(m.id);
-      if (done) done(m.text);
+      if (done) done(m);
       break;
     }
     default: break;
@@ -131,7 +132,8 @@ function tabGroup(key, names, onShow) {
   return show;
 }
 const showTab = tabGroup('elf2.tab', ['vid1', 'pixie'], (name) => (name === 'vid1' ? term.draw() : pixie.draw()));
-tabGroup('elf2.tab.files', ['load', 'roms']);
+tabGroup('elf2.tab.files', ['load', 'asm', 'roms']);
+loadSampleList();
 
 // Bring the Pixie tab forward when a program turns the display on.
 let pixieWasOn = null;
@@ -213,13 +215,20 @@ $('term-paste').addEventListener('click', async () => {
     message('Clipboard not available: click the screen and press Ctrl+V instead.');
   }
 });
-$('term-copy').addEventListener('click', () => {
+// Send a request to the worker and resolve with its reply message.
+function request(type, extra) {
   const id = ++textRequests;
-  textWaiters.set(id, (text) => navigator.clipboard.writeText(text).then(
+  return new Promise((resolve) => {
+    textWaiters.set(id, resolve);
+    send({ type, id, ...extra });
+  });
+}
+
+$('term-copy').addEventListener('click', () => {
+  request('get-text').then((m) => navigator.clipboard.writeText(m.text).then(
     () => message('Screen copied.'),
     () => message('Clipboard not available.'),
   ));
-  send({ type: 'get-text', id });
 });
 
 // ------------------------------------------------------------------ files
@@ -285,6 +294,182 @@ function download(name, data, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   message(`Saved ${name}.`);
 }
+
+// ------------------------------------------------------------------ sample programs
+// A dropdown of bundled programs from programs/samples.json. Loading one puts
+// it in RAM only; the user presses RUN.
+let samples = [];
+async function loadSampleList() {
+  const sel = $('sample-select');
+  try {
+    const res = await fetch('programs/samples.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    samples = await res.json();
+  } catch {
+    samples = [];
+  }
+  sel.textContent = '';
+  if (!samples.length) {
+    sel.appendChild(new Option('(none available)', ''));
+    sel.disabled = true;
+    $('sample-load').disabled = true;
+    return;
+  }
+  for (const [i, s] of samples.entries()) {
+    const o = new Option(s.name, String(i));
+    if (s.description) o.title = s.description;
+    sel.appendChild(o);
+  }
+}
+$('sample-load').addEventListener('click', async () => {
+  const s = samples[Number($('sample-select').value)];
+  if (!s) return;
+  try {
+    const res = await fetch(`programs/${s.file}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const hex = /\.hex$/i.test(s.file);
+    send({ type: 'load', name: s.file.replace(/\.[^.]*$/, ''), base: s.address || '0000', bytes, hex });
+    message(`Loaded ${s.name}${s.description ? ' — ' + s.description : '. Press RUN.'}`);
+  } catch (e) {
+    message(`Could not load ${s.file}: ${e.message}`, true);
+  }
+});
+
+// ------------------------------------------------------------------ assemble
+// Upload one or more .asm/.m18 files (several for INCLUDEs), assemble in the
+// worker, show errors or the listing, then Load on demand. Never auto-runs.
+let asmResult = null; // last { ok, main, hex, listing } we assembled
+// Added source files, keyed by display path (relative path when known, else
+// file name). Accumulated across several "Add files…"/"Add folder…" picks so
+// a main file and its INCLUDEs can come from different folders.
+const asmFiles = new Map();
+const ASM_EXT = /\.(asm|m18|inc)$/i;
+
+function renderAsmFileList() {
+  const list = $('asm-filelist');
+  list.textContent = '';
+  for (const path of asmFiles.keys()) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = path;
+    const rm = document.createElement('button');
+    rm.textContent = '×';
+    rm.className = 'asm-file-remove';
+    rm.title = `Remove ${path}`;
+    rm.addEventListener('click', () => {
+      asmFiles.delete(path);
+      $('asm-main-wrap').hidden = true; // the main file may have changed
+      renderAsmFileList();
+    });
+    li.append(name, rm);
+    list.appendChild(li);
+  }
+  const any = asmFiles.size > 0;
+  $('asm-clear').disabled = !any;
+  $('asm-build').disabled = !any;
+  if (!any) list.textContent = '';
+}
+
+// Add picked files to the set. `pathOf` gives each file's display path.
+async function addAsmFiles(fileList, pathOf) {
+  let added = 0;
+  let skipped = 0;
+  for (const f of fileList) {
+    const path = pathOf(f);
+    if (!ASM_EXT.test(path)) { skipped++; continue; }
+    asmFiles.set(path, await f.text());
+    added++;
+  }
+  $('asm-main-wrap').hidden = true; // adding files may change the main file
+  renderAsmFileList();
+  const extra = skipped ? ` (skipped ${skipped} non-source file${skipped > 1 ? 's' : ''})` : '';
+  message(added ? `Added ${added} file${added > 1 ? 's' : ''}${extra}. ${asmFiles.size} in all.`
+    : `No .asm/.m18/.inc files in that selection${extra}.`);
+}
+
+async function assembleFiles() {
+  if (!asmFiles.size) { message('Add one or more source files first.'); return; }
+  const payload = [...asmFiles.entries()].map(([name, text]) => ({ name, text }));
+  const main = $('asm-main-wrap').hidden ? '' : $('asm-main').value;
+  const m = await request('assemble', { files: payload, main });
+  asmResult = null;
+  $('asm-load').disabled = true;
+  $('asm-dl-hex').disabled = true;
+  $('asm-dl-lst').disabled = true;
+  const out = $('asm-output');
+
+  // Ambiguous main file: offer a chooser and stop.
+  if (m.main === null) {
+    const sel = $('asm-main');
+    sel.textContent = '';
+    for (const name of asmFiles.keys()) sel.appendChild(new Option(name, name));
+    $('asm-main-wrap').hidden = false;
+    out.hidden = false;
+    out.textContent = m.message + '\nPick the main file above and assemble again.';
+    out.classList.add('error');
+    return;
+  }
+
+  if (m.errors && m.errors.length) {
+    out.hidden = false;
+    out.classList.add('error');
+    out.textContent = `${m.errors.length} error(s) assembling ${m.main}:\n`
+      + m.errors.map((e) => `${e.file || m.main}:${e.line}: ${e.message}`).join('\n');
+    message(`Assembly of ${m.main} failed with ${m.errors.length} error(s).`, true);
+    return;
+  }
+  if (!m.ok) { // e.g. bad input, no entry file chosen yet
+    out.hidden = false;
+    out.classList.add('error');
+    out.textContent = m.message || 'Assembly failed.';
+    return;
+  }
+
+  asmResult = m;
+  out.hidden = false;
+  out.classList.remove('error');
+  out.textContent = m.listing;
+  $('asm-load').disabled = false;
+  $('asm-dl-hex').disabled = false;
+  $('asm-dl-lst').disabled = false;
+  const span = (m.lo >= 0) ? ` (${hex4(m.lo)}-${hex4(m.hi)})` : '';
+  message(`Assembled ${m.main}${span}. Click Load, then press RUN.`);
+}
+
+$('asm-build').addEventListener('click', assembleFiles);
+// The hidden inputs do the actual OS file picking; the visible buttons trigger them.
+$('asm-add-files').addEventListener('click', () => $('asm-file').click());
+$('asm-add-folder').addEventListener('click', () => $('asm-folder').click());
+$('asm-file').addEventListener('change', async (e) => {
+  await addAsmFiles(e.target.files, (f) => f.name);
+  e.target.value = ''; // allow re-picking the same file later
+});
+$('asm-folder').addEventListener('change', async (e) => {
+  // A folder pick gives each file a relative path (folder/sub/file); keep it
+  // so INCLUDEs that name a subfolder resolve, and duplicate base names stay distinct.
+  await addAsmFiles(e.target.files, (f) => f.webkitRelativePath || f.name);
+  e.target.value = '';
+});
+$('asm-clear').addEventListener('click', () => {
+  asmFiles.clear();
+  $('asm-main-wrap').hidden = true;
+  $('asm-output').hidden = true;
+  renderAsmFileList();
+  message('Cleared the source file list.');
+});
+renderAsmFileList();
+$('asm-load').addEventListener('click', () => {
+  if (!asmResult) return;
+  const bytes = new TextEncoder().encode(asmResult.hex);
+  send({ type: 'load', name: asmResult.main.replace(/\.[^.]*$/, ''), base: '0000', bytes, hex: true });
+});
+$('asm-dl-hex').addEventListener('click', () => {
+  if (asmResult) download(asmResult.main.replace(/\.[^.]*$/, '') + '.hex', asmResult.hex, 'text/plain');
+});
+$('asm-dl-lst').addEventListener('click', () => {
+  if (asmResult) download(asmResult.main.replace(/\.[^.]*$/, '') + '.lst', asmResult.listing, 'text/plain');
+});
 
 // ------------------------------------------------------------------ start-up
 async function afterReady() {

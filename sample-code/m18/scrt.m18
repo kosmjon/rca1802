@@ -1,17 +1,17 @@
 ; Standard Call and Return Technique (SCRT) CALL
 ; User must have set up
-; Define a macro "CALL addr" which expands to 
+; Define a macro "CALL addr" which expands to
 ;       SEP R4
 ;       DW addr
 ;
 SCALLE: SEP R3;                 R3 POINTS TO SUBROUTINE
 SCALL:  SEX R4;                 PC=R4, INHIBIT INTERRUPTS
-        DIS            
+        DIS
         DB $24;                 2:X,4:P
-        D:RF.1;                 Preserve D          
+        D:RF.1;                 Preserve D
         R6:STK;                  and R6
         R3:R6
-        (R6++):R3.1             
+        (R6++):R3.1
         (R6++):R3.0
         RF.1:D
         SEX R4
@@ -29,7 +29,8 @@ SRETN:  SEX R5;                INHIBIT INTERRUPTS
         R6:R3
         STK:R6
         RF.1:D
-        SEX R5              
+        SEX R5
         RET;                    PERMIT INTERRUPTS
         DB $25;                 see notes on DIS and RET
         /SRETNE;                BRANCH TO EXITR. THIS WILL CAUSE
+;                                execution to resume after call.

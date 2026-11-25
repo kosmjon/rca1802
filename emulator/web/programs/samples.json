@@ -1,0 +1,8 @@
+[
+  {
+    "file": "pixieanimation.hex",
+    "name": "Pixie animation",
+    "address": "0000",
+    "description": "Animates the CDP1861 Pixie display. Loads at 0000; press RUN."
+  }
+]

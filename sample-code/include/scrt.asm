@@ -6,7 +6,7 @@
 ;
 SCALLE: SEP R3;                 R3 POINTS TO SUBROUTINE
 SCALL:  SEX R4;                 PC=R4, INHIBIT INTERRUPTS
-        DIS            
+        DIS
         DB $24;                 2:X,4:P
         PHI R15 ; Preserve D
         GHI R6 ; R6:STK
@@ -44,7 +44,8 @@ SRETN:  SEX R5;                INHIBIT INTERRUPTS
         LDX
         PHI R6
         GHI R15
-        SEX R5              
+        SEX R5
         RET;                    PERMIT INTERRUPTS
         DB $25;                 see notes on DIS and RET
-        BR SRETNE ; BRANCH TO EXITR. THIS WILL CAUSE
+        BR SRETNE ;             BRANCH TO EXITR. THIS WILL CAUSE
+;                                exec to resume after call.

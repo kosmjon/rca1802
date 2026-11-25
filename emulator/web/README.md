@@ -25,6 +25,20 @@ module workers or WebAssembly from `file://`.
   the page. Tick *as ROM* for a ROM image (for example the Giant Board monitor at
   F000). *Key in LBR F000* writes `C0 F0 00` at 0000 so RUN starts the monitor.
   *Save memory* downloads an address range as Intel HEX or binary.
+  *Sample program* loads one of the bundled programs in `programs/` (listed in
+  `programs/samples.json`) into RAM; it does not start it, so press RUN after.
+- **Assemble and save**: add CDP1802 source. `.asm` is assembled directly;
+  `.m18` is MOL1802 and is transpiled to `asm1802` source first (a `.m18`
+  `INCLUDE` resolves to the transpiled `.asm`). *Add files…* and *Add folder…*
+  accumulate into one list (shown below the buttons, each removable; *Clear*
+  empties it), so a program and its `INCLUDE`s can come from different folders.
+  *Add folder…* keeps each file's path under the chosen folder, so an
+  `INCLUDE "sub/dir/file"` resolves by that path; otherwise `INCLUDE "name"`
+  matches by base name. The main file is the one no other file includes; when
+  that is ambiguous, a *main file* chooser appears. *Assemble* shows the listing
+  (or the errors, as `file:line: message`). On success,
+  *Load* puts the result in RAM (then press RUN), and *Download .hex* / *.lst*
+  save the output. Assembling never runs the program.
 - **ROMs and machine**:
   - ROMs loaded with *as ROM* are saved in this browser (IndexedDB, keyed by
     SHA-256) and loaded at every power-on. Untick *use* to leave one out, or remove it.
@@ -68,8 +82,9 @@ module workers or WebAssembly from `file://`.
 | `js/terminal.js` | VID-1 screen and keyboard. |
 | `js/storage.js` | IndexedDB helpers (ROMs, saved state) and SHA-256. |
 | `js/debugger.js` | Debugger panel. |
-| `programs/` | Project-written test programs, copied here by `tests/programs/build.py`. |
+| `programs/` | Programs served to the page: the `?load=` test programs (copied by `tests/programs/build.py`), plus the *Sample program* list in `samples.json` and its `.hex` files. |
 | `test/e2e.mjs` | End-to-end test in headless Chrome (see below). |
+| `test/assemble.mjs` | Node test of the WebAssembly assembler bindings (no browser). |
 
 ## End-to-end test
 
@@ -83,6 +98,12 @@ It loads the project test programs through the page's file input, drives the fro
 panel and terminal with synthetic events, and checks the display, LEDs, Pixie
 frame, VID-1 screen and real-time speed. Set `ELF2_SCREENSHOT=file.png` to save a
 screenshot.
+
+`node web/test/assemble.mjs` checks the "Assemble and save" tab's WebAssembly
+bindings (main-file auto-detection, `INCLUDE` resolution across uploaded files,
+`.m18` MOL1802 transpilation including the `sample-code/m18` sample set, and
+error reporting) directly, without a browser or the local server. Build
+`web/pkg` first.
 
 `node web/test/giant.mjs` runs the owner's Giant Board monitor ROM
 (`cassette-loader/reference/giantboard.hex`, not part of the emulator) with real

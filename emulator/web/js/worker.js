@@ -31,7 +31,7 @@
 //   {type: 'loaded', msg} / {type: 'error', msg} / {type: 'text', id, text}
 //   {type: 'download', name, data, mime}
 
-import init, { Emulator, version } from '../pkg/elf2_wasm.js';
+import init, { Emulator, version, assemble_files, assemble_files_from } from '../pkg/elf2_wasm.js';
 import { openDb, getAllRoms, getRom, putRom, deleteRom, getState, putState, deleteState, sha256Hex, hex4 } from './storage.js';
 
 const SLICE = 20000;          // max cycles per run() call
@@ -432,6 +432,12 @@ async function handle(m) {
     case 'save-now': lastSave = performance.now(); await saveSnapshot(); break;
     case 'save-range': saveRange(m); break;
     case 'get-text': post({ type: 'text', id: m.id, text: emu.vid1_text() }); break;
+    case 'assemble': {
+      const filesJson = JSON.stringify(m.files);
+      const json = m.main ? assemble_files_from(filesJson, m.main) : assemble_files(filesJson);
+      post({ type: 'reply', id: m.id, ...JSON.parse(json) });
+      break;
+    }
     default: break;
   }
   sendUpdate();
