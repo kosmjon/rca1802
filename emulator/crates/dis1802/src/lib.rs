@@ -320,9 +320,32 @@ impl Regs {
 fn writes_d(ins: &Instruction) -> bool {
     matches!(
         ins.mnemonic,
-        "LDN" | "LDX" | "LDXA" | "INP" | "OR" | "AND" | "XOR" | "ADD" | "SD" | "SM" | "SHR"
-            | "SHL" | "SHRC" | "SHLC" | "ADC" | "SDB" | "SMB" | "ORI" | "ANI" | "XRI" | "ADI"
-            | "SDI" | "SMI" | "ADCI" | "SDBI" | "SMBI"
+        "LDN"
+            | "LDX"
+            | "LDXA"
+            | "INP"
+            | "OR"
+            | "AND"
+            | "XOR"
+            | "ADD"
+            | "SD"
+            | "SM"
+            | "SHR"
+            | "SHL"
+            | "SHRC"
+            | "SHLC"
+            | "ADC"
+            | "SDB"
+            | "SMB"
+            | "ORI"
+            | "ANI"
+            | "XRI"
+            | "ADI"
+            | "SDI"
+            | "SMI"
+            | "ADCI"
+            | "SDBI"
+            | "SMBI"
     )
 }
 
@@ -417,8 +440,7 @@ impl<'a> Analysis<'a> {
         while let Some((mut addr, mut regs)) = queue.pop_front() {
             // Walk straight-line code until we leave the image, hit an already
             // decoded start, or reach an unconditional transfer.
-            loop {
-                let Some(i) = self.idx(addr) else { break };
+            while let Some(i) = self.idx(addr) {
                 match self.kind[i] {
                     Kind::CodeStart | Kind::Call => break, // already traced from here
                     Kind::CodeInner | Kind::CallWord => {

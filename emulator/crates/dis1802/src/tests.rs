@@ -3,7 +3,11 @@ use super::*;
 /// Assemble `src` with asm1802 and return the flat image (start, bytes).
 fn assemble(src: &str) -> (u16, Vec<u8>) {
     let asm = asm1802::assemble(src);
-    assert!(asm.ok(), "assembly failed:\n{src}\nerrors: {:?}", asm.errors);
+    assert!(
+        asm.ok(),
+        "assembly failed:\n{src}\nerrors: {:?}",
+        asm.errors
+    );
     asm.to_bin().expect("some bytes")
 }
 
@@ -84,7 +88,10 @@ fn no_scrt_disassembles_the_word_as_code() {
     let text = disassemble(&Program::new(0, bytes.to_vec()), &opts).to_text();
     // Without SCRT, the byte after SEP R4 is decoded as an instruction, so
     // there is no DW address word.
-    assert!(!text.contains("DW "), "should not treat word as data:\n{text}");
+    assert!(
+        !text.contains("DW "),
+        "should not treat word as data:\n{text}"
+    );
 }
 
 #[test]
@@ -166,11 +173,18 @@ fn full_word_stack_load_is_labelled() {
     // 7FFF is outside this tiny image, so it is an EQU named STACK, and the
     // setup loads are rewritten to HIGH/LOW STACK.
     assert!(
-        text.lines().any(|l| l.starts_with("STACK") && l.contains("EQU 0x7FFF")),
+        text.lines()
+            .any(|l| l.starts_with("STACK") && l.contains("EQU 0x7FFF")),
         "no stack EQU:\n{text}"
     );
-    assert!(text.contains("LDI HIGH STACK"), "high load not rewritten:\n{text}");
-    assert!(text.contains("LDI LOW STACK"), "low load not rewritten:\n{text}");
+    assert!(
+        text.contains("LDI HIGH STACK"),
+        "high load not rewritten:\n{text}"
+    );
+    assert!(
+        text.contains("LDI LOW STACK"),
+        "low load not rewritten:\n{text}"
+    );
 }
 
 #[test]

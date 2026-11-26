@@ -30,7 +30,10 @@ struct Args {
 }
 
 fn parse_hex16(s: &str, what: &str) -> Result<u16, String> {
-    let t = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let t = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     let t = t.strip_suffix(['h', 'H']).unwrap_or(t);
     u16::from_str_radix(t, 16).map_err(|_| format!("{what} `{s}` is not a hex address"))
 }

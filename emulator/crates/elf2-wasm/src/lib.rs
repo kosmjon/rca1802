@@ -18,7 +18,10 @@ pub fn version() -> String {
 
 /// The last path component (file name) of `s`, lower-cased for comparison.
 fn basename_lower(s: &str) -> String {
-    s.rsplit(['/', '\\']).next().unwrap_or(s).to_ascii_lowercase()
+    s.rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(s)
+        .to_ascii_lowercase()
 }
 
 /// Normalise a path for suffix comparison: lower-case, backslashes to
@@ -137,7 +140,9 @@ pub fn assemble_files(files_json: &str) -> String {
 pub fn assemble_files_from(files_json: &str, main: &str) -> String {
     let mut files: Vec<SourceFile> = match serde_json::from_str(files_json) {
         Ok(f) => f,
-        Err(e) => return json!({ "ok": false, "message": format!("bad files JSON: {e}") }).to_string(),
+        Err(e) => {
+            return json!({ "ok": false, "message": format!("bad files JSON: {e}") }).to_string()
+        }
     };
     if files.is_empty() {
         return json!({ "ok": false, "message": "no files were given" }).to_string();
@@ -145,7 +150,11 @@ pub fn assemble_files_from(files_json: &str, main: &str) -> String {
 
     // MOL1802 (.m18) source must be transpiled to asm1802 before assembly.
     // A .m18 main name refers to its transpiled .asm afterwards.
-    let main = if is_m18(main) { as_asm_name(main) } else { main.to_string() };
+    let main = if is_m18(main) {
+        as_asm_name(main)
+    } else {
+        main.to_string()
+    };
     let main = main.as_str();
     let transpile_errors = transpile_m18(&mut files);
     if !transpile_errors.is_empty() {
@@ -179,7 +188,9 @@ pub fn assemble_files_from(files_json: &str, main: &str) -> String {
     }
 
     let entry = if main.is_empty() {
-        let roots: Vec<usize> = (0..files.len()).filter(|&i| !included.contains(&files[i].name)).collect();
+        let roots: Vec<usize> = (0..files.len())
+            .filter(|&i| !included.contains(&files[i].name))
+            .collect();
         match roots.as_slice() {
             [one] => &files[*one],
             [] => {
@@ -212,7 +223,9 @@ pub fn assemble_files_from(files_json: &str, main: &str) -> String {
         .iter()
         .map(|d| json!({ "file": d.file, "line": d.line, "message": d.message }))
         .collect();
-    let (lo, hi) = asm.range().map_or((-1, -1), |(l, h)| (i32::from(l), i32::from(h)));
+    let (lo, hi) = asm
+        .range()
+        .map_or((-1, -1), |(l, h)| (i32::from(l), i32::from(h)));
     json!({
         "ok": asm.ok(),
         "main": entry.name,
@@ -258,7 +271,10 @@ fn first_root_name(files: &[SourceFile], main: &str) -> serde_json::Value {
             }
         }
     }
-    let roots: Vec<&SourceFile> = files.iter().filter(|f| !included.contains(&f.name)).collect();
+    let roots: Vec<&SourceFile> = files
+        .iter()
+        .filter(|f| !included.contains(&f.name))
+        .collect();
     match roots.as_slice() {
         [one] => json!(one.name),
         _ => serde_json::Value::Null,
@@ -650,7 +666,11 @@ mod tests {
         let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
         assert_eq!(r["ok"], true, "errors: {}", r["errors"]);
         assert_eq!(r["main"], "main.asm");
-        assert!(r["hex"].as_str().unwrap().contains("F803"), "hex: {}", r["hex"]); // LDI 3
+        assert!(
+            r["hex"].as_str().unwrap().contains("F803"),
+            "hex: {}",
+            r["hex"]
+        ); // LDI 3
     }
 
     #[test]
@@ -658,7 +678,10 @@ mod tests {
         let files = r#"[{"name":"a.asm","text":"        INCLUDE \"gone.inc\"\n"}]"#;
         let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
         assert_eq!(r["ok"], false);
-        assert!(r["errors"].as_array().unwrap().iter().any(|e| e["message"].as_str().unwrap().contains("not among the uploaded")));
+        assert!(r["errors"].as_array().unwrap().iter().any(|e| e["message"]
+            .as_str()
+            .unwrap()
+            .contains("not among the uploaded")));
     }
 
     #[test]
@@ -728,7 +751,11 @@ mod tests {
         let r: serde_json::Value = serde_json::from_str(&assemble_files(files)).unwrap();
         assert_eq!(r["ok"], false, "unexpectedly ok: {r}");
         assert_eq!(r["message"], "MOL1802 transpile failed");
-        assert!(r["errors"].as_array().unwrap().iter().all(|e| e["file"] == "bad.m18"));
+        assert!(r["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["file"] == "bad.m18"));
     }
 
     #[test]
@@ -742,7 +769,8 @@ mod tests {
         assert!(r["main"].is_null());
         assert!(r["message"].as_str().unwrap().contains("ambiguous"));
         // Choosing one resolves it.
-        let r: serde_json::Value = serde_json::from_str(&assemble_files_from(files, "two.asm")).unwrap();
+        let r: serde_json::Value =
+            serde_json::from_str(&assemble_files_from(files, "two.asm")).unwrap();
         assert_eq!(r["ok"], true);
         assert_eq!(r["main"], "two.asm");
     }
