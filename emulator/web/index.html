@@ -46,6 +46,7 @@
       <div class="tabs" role="tablist">
         <button id="tab-vid1" class="tab active" role="tab" aria-selected="true" aria-controls="pane-vid1">VID-1 terminal</button>
         <button id="tab-pixie" class="tab" role="tab" aria-selected="false" aria-controls="pane-pixie">CDP1861 Pixie <span id="pixie-state" class="tab-badge">off</span></button>
+        <button id="tab-printer" class="tab" role="tab" aria-selected="false" aria-controls="pane-printer" hidden>Printer</button>
       </div>
       <div id="pane-vid1" class="pane" role="tabpanel">
         <canvas id="vid1" class="vid1" tabindex="0"></canvas>
@@ -63,6 +64,16 @@
         <div class="toolbar">
           <label class="opt"><input type="checkbox" id="scanlines" checked> scanlines</label>
           <label class="opt"><input type="checkbox" id="pixie-auto" checked> switch to this tab when the display turns on</label>
+        </div>
+      </div>
+      <div id="pane-printer" class="pane" role="tabpanel" hidden>
+        <div class="printer" aria-label="Dot-matrix printer paper">
+          <pre id="printer-paper" class="printer-paper"></pre>
+        </div>
+        <div class="toolbar">
+          <button id="printer-tear">Tear off</button>
+          <label class="opt"><input type="checkbox" id="printer-auto" checked> switch to this tab when printing</label>
+          <span class="hint">OUT 3 prints · EF1 = ready</span>
         </div>
       </div>
     </section>
@@ -190,6 +201,6 @@
 
   <!-- BUILD VERSION: the ?v= below busts caches of the whole module graph on
        each deploy. build-web.cmd / the Pages workflow stamp a fresh value in. -->
-  <script type="module" src="js/main.js?v=20261125174241"></script>
+  <script type="module" src="js/main.js?v=20261126041021"></script>
 </body>
 </html>

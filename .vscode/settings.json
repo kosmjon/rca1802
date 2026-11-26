@@ -1,4 +1,16 @@
 {
+  // Agent/automation commands in this workspace run in PowerShell, which
+  // chains commands (;, &&) and reports output and exit codes more reliably
+  // than cmd. Only the automation profile is overridden; interactive terminals
+  // still use your global default profile. Scoped to this repo so Java/Maven
+  // projects that rely on cmd profiles are unaffected.
+  "terminal.integrated.automationProfile.windows": {
+    "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "args": ["-NoProfile", "-NoLogo"]
+  },
+  // Long cargo/wasm-pack builds can exceed the 2-minute default.
+  "kiroAgent.terminalCommandTimeout": 600000,
+
   // .asm files open as Plain Text (no assembler extension installed).
   // Turn off pop-up and inline suggestions while editing them.
   "[plaintext]": {

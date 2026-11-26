@@ -102,6 +102,7 @@ function frame() {
     panel.update(u);
     pixie.update(u);
     followPixie(u.pixieOn);
+    updatePrinter(u);
     term.update(u);
     debug.update(u);
     speedLabel.textContent = u.rate ? `${(u.rate * 100).toFixed(0)}% speed` : '';
@@ -137,7 +138,10 @@ function tabGroup(key, names, onShow) {
   show(names.includes(saved) ? saved : names[0]);
   return show;
 }
-const showTab = tabGroup('elf2.tab', ['vid1', 'pixie'], (name) => (name === 'vid1' ? term.draw() : pixie.draw()));
+const showTab = tabGroup('elf2.tab', ['vid1', 'pixie', 'printer'], (name) => {
+  if (name === 'vid1') term.draw();
+  else if (name === 'pixie') pixie.draw();
+});
 tabGroup('elf2.tab.files', ['load', 'asm', 'roms']);
 loadSampleList();
 
@@ -147,6 +151,31 @@ function followPixie(on) {
   if (pixieWasOn === false && on && $('pixie-auto').checked) showTab('pixie');
   pixieWasOn = on;
 }
+
+// Printer tab: shown only when a printer is fitted; its paper mirrors the
+// emulated printout, and it comes forward the first time a program prints.
+const printerPaper = $('printer-paper');
+let printerShown = false;
+let printerPrinted = false;
+function updatePrinter(u) {
+  if (u.printerFitted && !printerShown) {
+    $('tab-printer').hidden = false;
+    printerShown = true;
+  }
+  if (u.printerText !== null && u.printerText !== undefined) {
+    printerPaper.textContent = u.printerText;
+    // Keep the latest line in view, like paper feeding out.
+    printerPaper.parentElement.scrollTop = printerPaper.parentElement.scrollHeight;
+    if (!printerPrinted) {
+      printerPrinted = true;
+      if ($('printer-auto').checked) showTab('printer');
+    }
+  }
+}
+$('printer-tear').addEventListener('click', () => {
+  send({ type: 'printer-tear-off' });
+  printerPaper.textContent = '';
+});
 
 // ------------------------------------------------------------------ ROM manager
 function showRomTable(roms, missing) {

@@ -49,6 +49,14 @@ pub struct System {
     pub(crate) parallel: Option<Cdp1852Ports>,
     /// Cassette interface slot, if fitted (v1 stub).
     pub(crate) cassette: Option<Cassette>,
+    /// Parallel ASCII keyboard (INP 5), if fitted.
+    pub(crate) pkeyboard: Option<crate::pkeyboard::ParallelKeyboard>,
+    /// Parallel dot-matrix printer (OUT 3), if fitted.
+    pub(crate) printer: Option<crate::printer::Printer>,
+    /// EF line (1-4) the parallel keyboard strobes, when fitted.
+    pub(crate) pkeyboard_ef: u8,
+    /// EF line (1-4) the printer "ready" drives, when fitted.
+    pub(crate) printer_ef: u8,
     /// Machine cycles elapsed (same count as `Cpu::cycles`, kept here for peripherals).
     pub(crate) cycle: u64,
 }
@@ -110,6 +118,13 @@ impl Bus for System {
     fn out(&mut self, port: u8, val: u8) {
         match port {
             1 => self.pixie_switch(false),
+            3 => {
+                if let Some(p) = &mut self.printer {
+                    // EF is sampled during execute; the printer accepts on this cycle.
+                    p.write(val, self.cycle + 1);
+                    self.events.push(Event::PrinterChar(val));
+                }
+            }
             4 => self.show(val),
             7 => {
                 if let Some(p) = &mut self.parallel {
@@ -128,6 +143,10 @@ impl Bus for System {
                 self.config.unmapped_read
             }
             4 => self.keypad.byte(),
+            5 => match &mut self.pkeyboard {
+                Some(k) => k.read(),
+                None => self.config.unmapped_read,
+            },
             7 => match &mut self.parallel {
                 Some(p) => p.cpu_read(),
                 None => self.config.unmapped_read,
@@ -156,6 +175,18 @@ impl Bus for System {
             if s.config().rx_ef == line {
                 // EF is sampled during the instruction's execute cycle.
                 level |= s.rx_ef(self.cycle + 1);
+            }
+        }
+        // Parallel keyboard strobe: high while a key byte is waiting to be read.
+        if let Some(k) = &self.pkeyboard {
+            if self.pkeyboard_ef == line {
+                level |= k.ready();
+            }
+        }
+        // Printer "ready": high when the printer can accept the next byte.
+        if let Some(p) = &self.printer {
+            if self.printer_ef == line {
+                level |= p.is_ready(self.cycle + 1);
             }
         }
         level
@@ -254,6 +285,8 @@ impl Machine {
         let config_vid1 = config.vid1.clone();
         let has_parallel = config.parallel_1852;
         let has_cassette = config.cassette;
+        let config_pkeyboard = config.parallel_keyboard;
+        let config_printer = config.printer;
         let cycles_per_second = config.cycles_per_second();
         let mut sys = System {
             config,
@@ -273,6 +306,10 @@ impl Machine {
             vid1: config_serial.map(|_| Vid1Terminal::new(&config_vid1)),
             parallel: has_parallel.then(Cdp1852Ports::default),
             cassette: has_cassette.then(Cassette::default),
+            pkeyboard: config_pkeyboard.map(|_| crate::pkeyboard::ParallelKeyboard::new()),
+            printer: config_printer.map(|c| crate::printer::Printer::new(&c, cycles_per_second)),
+            pkeyboard_ef: config_pkeyboard.map_or(0, |c| c.ef),
+            printer_ef: config_printer.map_or(0, |c| c.ef),
             cycle: 0,
         };
         let mut cpu = Cpu::new();
@@ -484,6 +521,34 @@ impl Machine {
     /// Cassette slot (v1 stub), if fitted.
     pub fn cassette(&self) -> Option<&Cassette> {
         self.sys.cassette.as_ref()
+    }
+
+    /// A key pressed on the parallel keyboard (INP 5): strobes the byte in and
+    /// raises its EF line. No-op if the parallel keyboard is not fitted. This is
+    /// separate from `term_key` (the VID-1 serial keyboard); the front end may
+    /// feed the same key to both.
+    pub fn parallel_key(&mut self, ascii: u8) {
+        if let Some(k) = &mut self.sys.pkeyboard {
+            k.press(ascii);
+        }
+    }
+
+    /// The printer paper so far: one string per line, trailing blanks trimmed.
+    /// `None` if no printer is fitted.
+    pub fn printer_paper(&self) -> Option<Vec<String>> {
+        self.sys.printer.as_ref().map(|p| p.paper())
+    }
+
+    /// Print-head position as (line, column); `None` if no printer is fitted.
+    pub fn printer_head(&self) -> Option<(usize, usize)> {
+        self.sys.printer.as_ref().map(|p| p.head())
+    }
+
+    /// Tear off the printed sheet and start fresh. No-op if no printer is fitted.
+    pub fn printer_tear_off(&mut self) {
+        if let Some(p) = &mut self.sys.printer {
+            p.tear_off();
+        }
     }
 
     /// Clear the VID-1 screen and home its cursor (the terminal's own clear, as if FF

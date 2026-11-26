@@ -34,6 +34,10 @@ pub struct Config {
     pub parallel_sr_to_int: bool,
     /// Cassette interface (later release; a stub in v1).
     pub cassette: bool,
+    /// Parallel ASCII keyboard read with `INP 5`; `None` = not fitted.
+    pub parallel_keyboard: Option<ParallelKeyboardConfig>,
+    /// Parallel dot-matrix printer written with `OUT 3`; `None` = not fitted.
+    pub printer: Option<PrinterConfig>,
 }
 
 impl Default for Config {
@@ -50,6 +54,52 @@ impl Default for Config {
             parallel_1852: false,
             parallel_sr_to_int: false,
             cassette: false,
+            parallel_keyboard: None,
+            printer: None,
+        }
+    }
+}
+
+/// Parallel ASCII keyboard: a key press raises `ef` and the byte is read with
+/// `INP 5` (requirement: parallel keyboard input).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ParallelKeyboardConfig {
+    /// EF line raised while a key byte is waiting (the strobe). Default EF2.
+    pub ef: u8,
+}
+
+impl Default for ParallelKeyboardConfig {
+    fn default() -> Self {
+        ParallelKeyboardConfig { ef: 2 }
+    }
+}
+
+/// Parallel dot-matrix printer: `OUT 3` prints a byte; `ef` reads high when the
+/// printer is ready to accept one (requirement: parallel printer output).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrinterConfig {
+    /// EF line that reads high when the printer is ready. Default EF1.
+    pub ef: u8,
+    /// Characters per line before an automatic wrap.
+    pub width: u16,
+    /// Lines per page (for form feed).
+    pub page_lines: u16,
+    /// A carriage return also feeds a line (CR = CR+LF).
+    pub cr_feeds: bool,
+    /// Milliseconds the printer is busy (EF low) after accepting a byte.
+    pub busy_ms: u32,
+}
+
+impl Default for PrinterConfig {
+    fn default() -> Self {
+        PrinterConfig {
+            ef: 1,
+            width: 80,
+            page_lines: 66,
+            cr_feeds: true,
+            busy_ms: 5,
         }
     }
 }
@@ -261,6 +311,22 @@ impl Config {
                         c.code
                     ),
                 );
+            }
+        }
+        if let Some(k) = &self.parallel_keyboard {
+            if !(1..=4).contains(&k.ef) {
+                return bad("parallel_keyboard.ef", format!("EF{}; must be 1..=4", k.ef));
+            }
+        }
+        if let Some(p) = &self.printer {
+            if !(1..=4).contains(&p.ef) {
+                return bad("printer.ef", format!("EF{}; must be 1..=4", p.ef));
+            }
+            if p.width == 0 {
+                return bad("printer.width", "must be at least 1".into());
+            }
+            if p.page_lines == 0 {
+                return bad("printer.page_lines", "must be at least 1".into());
             }
         }
         Ok(())

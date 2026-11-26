@@ -20,26 +20,28 @@ START:  LDI HIGH STACK;         STACK:R2
 ;
 ; ---- Main loop
 ;
-L0014:  CALL OUTCR;             Print CR
+MLOOP:  CALL OUTCR;             Print CR
         CALL L0067;             Print > (prompt)
-        CALL GETCH
-        XRI 0x44;               Is is 'D'?
+        CALL GETCH;             Into D
+        XRI 0x44;               D=='D'?
         LBZ L00EB;              /DUMP
 ;
-        XRI 0x01;               'E'?
-        LBZ L0140
+        XRI 0x01;               D=='E'?
+        LBZ ENTER;              /ENTER
 ;
-        XRI 0x03
+        XRI 0x03;               D=='F'?
         LBZ L0178
 ;
-        XRI 0x01
+        XRI 0x01;               D=='G'?
         LBZ L018F
 ;
-        XRI 0x1F
-        LBZ L01A0
+        XRI 0x1F;               D=='X'?
+        LBZ L01A0;              /MLOOP
+;
+; ---- Invalid input; show * and /MLOOP
 ;
 L0036:  CALL L006D;             Print * and loop
-        BR L0014
+        BR MLOOP
 ;
 ; ---- SCRT "CALL"
 ;
@@ -141,9 +143,9 @@ L0095:  CALL L009B;             One hex digit in D
         GLO RF
         BR L00A0
 ;
-; ---- Hex high nibble to ASCII char and Print
+; ---- Hex high nibble of D to ASCII char and Print
 ;
-L009B:  PLO RF;                 D:RF.0
+L009B:  PLO RF;                 D:RF.0   Why?
         SHR                     high nibble to low
         SHR
         SHR
@@ -153,7 +155,7 @@ L00A0:  ANI 0x0F;               Discard all but lower 4 bits
         LSNF
         ADI 0x07
         SMI 0xC6
-        PHI RF
+        PHI RF;                 D:RF.1
         LBR L01AD
 ;
 ; ---- Read 16-bit hex number from KB into RD
@@ -164,7 +166,7 @@ L00AD:  CALL L0073
         PLO RD
         RETN
 ;
-; ---- Read start,length from KB into R8,R9
+; ---- Read start,end address from KB into R8,R9
 ;
 L00B6:  CALL L00AD
         GHI RD;                 RD:R8
@@ -193,7 +195,7 @@ L00CC:  GHI R9
         GLO R8
         XOR
         BNZ L00DB
-        LBR L0014;              /MLOOP
+        LBR MLOOP;              /MLOOP
 L00DB:  RETN
 ;
 ; ---- Print address followed by ": "
@@ -254,69 +256,70 @@ L0138:  LDI 0x29;                yes, print )
         CALL L01AD
         LBR L00F1;              Continue dump.
 ;
-; ---- Edit handler
+; ---- Enter handler
 ;
-L0140:  CALL L00AD;             Read 16-bit hex number into RD
+ENTER:  CALL L00AD;             Read 16-bit hex number into RD
         GHI RD;                 RD:R8
         PHI R8
         GLO RD
         PLO R8
 L0147:  CALL GETCH
         XRI 0x0D;               CR?
-        LBZ L0014
+        LBZ MLOOP;              Done
 ;
-        XRI 0x21
-        BZ L0161
+        XRI 0x21;               Comma?
+        BZ L0161;               Go get byte to load
 ;
-        XRI 0x0C
+        XRI 0x0C;               Space?
         BZ L015A
         LBR L0036;              Print * and /MLOOP
 ;
 L015A:  LDN R8
         CALL L0095
         CALL L0064;             Print Colon
-L0161:  CALL L0073;             Read byte
-        STR R8
-        GLO R8
-        INC R8
+L0161:  CALL L0073;             Read byte into D
+        STR R8;                 D:(R8)
+        GLO R8                  R8.0:D
+        INC R8                  ++R8
         ANI 0x0F
         XRI 0x0F
+        BZ L0173;               R8 at 16-byte boundary, then CR
+        XRI 0x08;                or R8 & 0xF == 7?
         BZ L0173
-        XRI 0x08
-        BZ L0173
-        BR L0147
-L0173:  CALL OUTCR
-        BR L0147
+        BR L0147;               Get , and more bytes
+L0173:  CALL OUTCR;             Print a CR
+        BR L0147;               Loop for more
 ;
-; ----
+; ---- Fill Handler
+;      Get 16-bit start and end address and a byte to fill with.
 ;
-L0178:  CALL L00B6
-        CALL GETCH
-        XRI 0x2C
-        LBNZ L0036
-        CALL L0073
+L0178:  CALL L00B6;             Start and end address into R8, R9
+        CALL GETCH;             Read user's next key
+        XRI 0x2C;               Comma?
+        LBNZ L0036;             No then error
+        CALL L0073;             Get one byte
         PLO RF
-L0187:  GLO RF
-        STR R8
-        CALL L00CC
-        INC R8
-        BR L0187
+FLOOP:  GLO RF
+        STR R8                  D:(R8)
+        CALL L00CC;             R8==R9? /MLOOP
+        INC R8                  ++R8
+        BR FLOOP;               Keep filling
 ;
-; ----
+; ---- Go? Handler
 ;
-L018F:  CALL L006A
-        CALL L00AD
+L018F:  CALL L006A;             Output space
+        CALL L00AD;             16-bit number into RD
         GHI R3
-        PHI R9
-        LDI 0x9B
+        PHI R9;                 Assume same page?
+        LDI LOW L009B;
         PLO R9
         SEP R9
-        GHI RD
+        GHI RD;                 RD:R3
         PHI R3
         GLO RD
         PLO R3
-        SEP R3
-L01A0:  LBR L0014
+        SEP R3                  R3:PC
+L01A0:  LBR MLOOP
 ;
 ; ---- KB char to D and RF.1
 ;

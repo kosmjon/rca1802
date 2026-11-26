@@ -58,6 +58,21 @@ workflow stamps the commit SHA. Nothing needs the version by hand.
     ROMs.
   - *Machine configuration (JSON)* sets RAM size, clock, serial and VID-1 options; it
     is kept in `localStorage` and applied with a power cycle.
+  - *Parallel keyboard and printer.* Besides the VID-1 serial keyboard and screen,
+    the configuration can fit a parallel ASCII keyboard and a dot-matrix printer:
+    ```json
+    { "parallel_keyboard": { "ef": 2 },
+      "printer": { "ef": 1, "width": 80, "page_lines": 66, "cr_feeds": true, "busy_ms": 5 } }
+    ```
+    A key press raises the keyboard's `ef` line (the strobe, EF2 by default) and the
+    byte is read with `INP 5`. The printer accepts a byte or control code with
+    `OUT 3` and reads its `ef` line (ready, EF1 by default) high when it can take the
+    next one (low briefly while busy). The on-screen keyboard drives both the serial
+    and parallel keyboards; printed output appears on the **Printer** tab (continuous
+    paper with a *Tear off* button). Both are omitted by default, so the serial
+    VID-1 remains the keyboard and screen. The default EF lines (2 and 1) overlap the
+    cassette and Pixie lines; if you fit those too, move the keyboard/printer to free
+    EF lines (3, 4) in the JSON.
 - **URL parameters**: `?load=FILE[@ADDR]` loads `programs/FILE` (the project test
   programs) after start-up, `&run=1` then sets RUN, `?fresh=1` ignores the saved state.
   Example: `?load=pixie64x128.hex&run=1`.

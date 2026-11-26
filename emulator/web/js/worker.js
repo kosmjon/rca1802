@@ -53,6 +53,7 @@ let last = 0;
 let lastPost = 0;
 let lastSave = 0;
 let pixieDirty = true;
+let printerDirty = true;
 let rateCycles = 0;
 let rateStart = 0;
 let rate = 0;
@@ -78,6 +79,9 @@ function copy(ptr, len) {
 function sendUpdate() {
   const pixie = pixieDirty ? copy(emu.pixie_frame_ptr(), 1024) : null;
   pixieDirty = false;
+  const printerFitted = Number(emu.printer_head()) >= 0;
+  const printerText = printerDirty && printerFitted ? emu.printer_text() : null;
+  printerDirty = false;
   const cols = emu.vid1_columns();
   const screen = copy(emu.vid1_screen_ptr(), 16 * cols);
   const state = JSON.parse(emu.state_json());
@@ -93,6 +97,8 @@ function sendUpdate() {
     q: emu.q(),
     ef: emu.ef_bits(),
     pixieOn: emu.pixie_on(),
+    printerFitted,
+    printerText,
     pending: emu.term_pending(),
     // Running from an address with no RAM or ROM: the CPU is executing FF bytes.
     pcUnmapped: (state.state === 'running' || state.state === 'idle') && !emu.is_mapped(state.pc),
@@ -243,6 +249,7 @@ function noteEvent(e) {
   if (kind === 1) pixieDirty = true;
   else if (kind === 2) logSerial('tx', e & 0xFF);
   else if (kind === 3) logSerial('err', 0);
+  else if (kind === 8) printerDirty = true; // PrinterChar: paper changed
 }
 
 // ------------------------------------------------------------------ persistence
@@ -362,10 +369,20 @@ async function handle(m) {
     case 'switch': emu.set_switch(m.sw, m.on); pixieDirty = true; break;
     case 'in': pressIn(m.down); break;
     case 'hex': emu.hex_key(m.nibble); break;
-    case 'key': emu.term_key(m.code); logSerial('rx', m.code & 0x7F); break;
+    case 'key':
+      // One keyboard drives both inputs: VID-1 serial RX and (if fitted) the
+      // parallel keyboard. parallel_key is a no-op when no parallel keyboard.
+      emu.term_key(m.code);
+      emu.parallel_key(m.code);
+      logSerial('rx', m.code & 0x7F);
+      break;
+    case 'printer-tear-off': emu.printer_tear_off(); printerDirty = true; break;
     case 'paste':
       emu.term_paste(m.text);
-      for (const ch of m.text.replace(/\r?\n/g, '\r')) logSerial('rx', ch.charCodeAt(0) & 0x7F);
+      for (const ch of m.text.replace(/\r?\n/g, '\r')) {
+        emu.parallel_key(ch.charCodeAt(0) & 0x7F);
+        logSerial('rx', ch.charCodeAt(0) & 0x7F);
+      }
       break;
     case 'term-clear': emu.vid1_clear(); break;
     case 'speed': maxSpeed = !!m.max; break;

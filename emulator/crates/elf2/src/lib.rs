@@ -16,6 +16,8 @@ mod memory;
 mod panel;
 pub mod parallel;
 pub mod pixie;
+pub mod pkeyboard;
+pub mod printer;
 pub mod serial;
 mod snapshot;
 pub mod vid1;
@@ -51,6 +53,9 @@ mod tests_vid1;
 
 #[cfg(test)]
 mod tests_parallel;
+
+#[cfg(test)]
+mod tests_pio;
 
 #[cfg(test)]
 mod tests_files;

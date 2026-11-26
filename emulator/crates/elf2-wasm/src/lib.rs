@@ -309,6 +309,7 @@ pub enum EventKind {
     Q = 5,
     Breakpoint = 6,
     Halted = 7,
+    PrinterChar = 8,
 }
 
 /// Pack an event as `(kind << 24) | value`.
@@ -321,6 +322,7 @@ pub fn pack(e: &Event) -> u32 {
         Event::Q(q) => (EventKind::Q, u32::from(q)),
         Event::Breakpoint(a) => (EventKind::Breakpoint, u32::from(a)),
         Event::Halted => (EventKind::Halted, 0),
+        Event::PrinterChar(c) => (EventKind::PrinterChar, u32::from(c)),
     };
     ((k as u32) << 24) | v
 }
@@ -519,6 +521,32 @@ impl Emulator {
     /// VID-1 screen as text lines joined with `\n`, trailing spaces removed.
     pub fn vid1_text(&self) -> String {
         self.m.vid1_text().join("\n")
+    }
+
+    // ---------------------------------------------------------------- parallel I/O
+
+    /// A key pressed on the parallel keyboard (INP 5 / EF strobe). No-op if the
+    /// parallel keyboard is not fitted. Independent of `term_key` (VID-1 serial).
+    pub fn parallel_key(&mut self, code: u8) {
+        self.m.parallel_key(code);
+    }
+
+    /// The printer paper as text lines joined with `\n`, or empty if no printer
+    /// is fitted (trailing blanks on each line removed).
+    pub fn printer_text(&self) -> String {
+        self.m.printer_paper().unwrap_or_default().join("\n")
+    }
+
+    /// Print-head position as `line * 65536 + column`, or -1 if no printer.
+    pub fn printer_head(&self) -> i64 {
+        self.m
+            .printer_head()
+            .map_or(-1, |(l, c)| (l as i64) * 65536 + c as i64)
+    }
+
+    /// Tear off the printed sheet and start fresh. No-op if no printer is fitted.
+    pub fn printer_tear_off(&mut self) {
+        self.m.printer_tear_off();
     }
 
     // ---------------------------------------------------------------- video memory

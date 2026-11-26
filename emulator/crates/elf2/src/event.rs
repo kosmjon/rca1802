@@ -9,6 +9,8 @@ pub enum Event {
     TermChar(u8),
     /// The serial TX line produced a framing error (task 8).
     TermFramingError,
+    /// A byte was printed to the parallel dot-matrix printer via `OUT 3`.
+    PrinterChar(u8),
     /// The two-digit hex display changed.
     HexDisplay(u8),
     /// Q changed during the run; only the final level is reported.
